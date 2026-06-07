@@ -1,0 +1,2 @@
+//anon public key:anon public key:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzZnBxZ2N0eHVpYXdjb2dsZWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwOTg0OTUsImV4cCI6MjA4OTY3NDQ5NX0.CIYKlTRCylwVIup217CfYyGT8Sp_62IpqoXc1sQEDRM
+//project url:https://rsfpqgctxuiawcoglede.supabase.co
