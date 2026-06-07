@@ -678,7 +678,7 @@ create policy "Auth users full access on audit_log"
           </div>
           <div class="table-wrap">
             <table style="min-width:760px">
-              <thead><tr><th>Full Name</th><th>Email</th><th>Role</th><th>Cases</th><th>Joined</th><th>Change Role</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Full Name</th><th>Email</th><th>Role</th><th>Settlement</th><th>Cases</th><th>Joined</th><th>Change Role</th><th>Actions</th></tr></thead>
               <tbody id="admin-tbody"></tbody>
             </table>
             <div id="admin-empty" class="empty-state" style="display:none"><div class="empty-icon">👥</div><p>No users found.</p></div>
@@ -853,20 +853,24 @@ create policy "Auth users full access on audit_log"
       <button class="close-btn" onclick="closeEditUserModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div style="display:flex;flex-direction:column;gap:14px">
-        <div class="field"><label>Full Name</label><input id="eu-name" type="text" placeholder="Full name"></div>
-        <div class="field"><label>Email</label><input id="eu-email" type="email" placeholder="Email" disabled style="opacity:.6;cursor:not-allowed"></div>
-        <div class="field"><label>Role</label>
-          <select id="eu-role">
-            <option value="officer">Case Officer</option>
-            <option value="coordinator">Coordinator</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <div style="background:var(--warn-bg);border:1px solid #f0d890;border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn)">
-          ⚠ Changing the role takes effect on the user's next login.
-        </div>
-      </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+  <div class="field"><label>Full Name</label><input id="eu-name" type="text" placeholder="Full name"></div>
+  <div class="field"><label>Email</label><input id="eu-email" type="email" placeholder="Email" disabled style="opacity:.6;cursor:not-allowed"></div>
+  <div class="field"><label>Role</label>
+    <select id="eu-role">
+      <option value="officer">Case Officer</option>
+      <option value="coordinator">Coordinator</option>
+      <option value="admin">Admin</option>
+    </select>
+  </div>
+  <div class="field"><label>Assigned Settlement / Village</label>
+    <input id="eu-settlement" type="text" placeholder="e.g. Ghanzi, D'Kar, New Xade">
+    <span style="font-size:11px;color:var(--text-muted);margin-top:2px">The village or settlement this officer is responsible for</span>
+  </div>
+  <div style="background:var(--warn-bg);border:1px solid #f0d890;border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn)">
+    ⚠ Role changes take effect on the user's next login.
+  </div>
+</div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-outline" onclick="closeEditUserModal()">Cancel</button>
@@ -2300,6 +2304,7 @@ async function loadAdminUsers() {
         <td class="name-cell">${esc(p.full_name||'—')} ${isMe?'<span style="font-size:10px;color:var(--text-muted)">(you)</span>':''}</td>
         <td style="font-size:12px;color:var(--text-muted)">${esc(p.email||'—')}</td>
         <td>${roleBadge}</td>
+        <td style="font-size:12px;color:var(--text-muted)">${esc(p.settlement||'—')}</td>
         <td style="text-align:center;font-weight:600;color:var(--navy)">${caseCount}</td>
         <td style="font-size:12px;color:var(--text-muted)">${joined}</td>
         <td>
@@ -2362,6 +2367,7 @@ function openEditUserModal(userId) {
   document.getElementById('eu-name').value = p.full_name || '';
   document.getElementById('eu-email').value = p.email || '';
   document.getElementById('eu-role').value = p.role || 'officer';
+  document.getElementById('eu-settlement').value = p.settlement || '';
   document.getElementById('edit-user-modal').classList.add('open');
 }
 
@@ -2374,24 +2380,24 @@ async function saveEditUser() {
   if (!editingUserId || currentUserRole !== 'admin') return;
   const name = document.getElementById('eu-name').value.trim();
   const role = document.getElementById('eu-role').value;
+  const settlement = document.getElementById('eu-settlement').value.trim();
   if (!name) { showToast('Name is required', 'error'); return; }
   try {
     const {error} = await sbClient.from('user_profiles')
-      .update({ full_name: name, role, updated_at: new Date().toISOString() })
+      .update({ full_name: name, role, settlement, updated_at: new Date().toISOString() })
       .eq('id', editingUserId);
     if (error) throw error;
-    // Update local list
     const p = allProfiles.find(x => x.id === editingUserId);
-    if (p) { p.full_name = name; p.role = role; }
+    if (p) { p.full_name = name; p.role = role; p.settlement = settlement; }
     showToast('User updated successfully', 'success');
     await sbClient.from('audit_log').insert({
       action: 'USER_EDIT', case_num: null,
       performed_by: currentUser.id, performed_by_name: currentUserName,
       performed_at: new Date().toISOString(),
-      details: { user_id: editingUserId, new_name: name, new_role: role }
+      details: { user_id: editingUserId, new_name: name, new_role: role, settlement }
     });
     closeEditUserModal();
-    await loadAdminUsers(); // refresh table
+    await loadAdminUsers();
   } catch(e) {
     showToast('Error: ' + e.message, 'error');
   }
