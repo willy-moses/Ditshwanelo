@@ -117,7 +117,7 @@ tbody td{padding:11px 13px;font-size:12.5px;color:var(--text);vertical-align:mid
 .name-cell{font-weight:500}
 .badge{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
 .badge::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.6}
-.badge-open{background:var(--info-bg);color:var(--info)}
+.badge-ongoing{background:var(--info-bg);color:var(--info)}
 .badge-pending{background:var(--warn-bg);color:var(--warn)}
 .badge-closed{background:var(--success-bg);color:var(--success)}
 .empty-state{text-align:center;padding:50px 20px;color:var(--text-muted)}
@@ -192,7 +192,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
 .vc-name{font-weight:600;font-size:14px;color:var(--navy);margin-bottom:6px}
 .vc-stats{display:flex;gap:8px;flex-wrap:wrap}
 .vc-stat{font-size:11px;padding:2px 8px;border-radius:20px}
-.vc-stat.open{background:var(--info-bg);color:var(--info)}
+.vc-stat.ongoing{background:var(--info-bg);color:var(--info)}
 .vc-stat.pending{background:var(--warn-bg);color:var(--warn)}
 .vc-stat.closed{background:var(--success-bg);color:var(--success)}
 .vc-total{font-size:11px;color:var(--text-muted)}
@@ -482,7 +482,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
         </div>
         <div class="stats-grid">
           <div class="stat-card navy"><div class="stat-label">Total Cases</div><div class="stat-val" id="stat-total">0</div><div class="stat-sub">All registered cases</div></div>
-          <div class="stat-card gold"><div class="stat-label">Open</div><div class="stat-val" id="stat-open">0</div><div class="stat-sub">Active &amp; ongoing</div></div>
+          <div class="stat-card gold"><div class="stat-label">Ongoing</div><div class="stat-val" id="stat-open">0</div><div class="stat-sub">Active &amp; ongoing</div></div>
           <div class="stat-card warn"><div class="stat-label">Pending</div><div class="stat-val" id="stat-pending">0</div><div class="stat-sub">Awaiting action</div></div>
           <div class="stat-card success"><div class="stat-label">Closed</div><div class="stat-val" id="stat-closed">0</div><div class="stat-sub">Resolved cases</div></div>
         </div>
@@ -503,7 +503,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
         <div class="toolbar">
           <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" id="search" placeholder="Search name, ID, village, case no..." oninput="renderTable()"></div>
           <select id="filter-type" onchange="renderTable()"><option value="">All types</option><option>Labour Dispute</option><option>Land Dispute</option><option>Family Matter</option><option>Criminal</option><option>Civil</option><option>Other</option></select>
-          <select id="filter-status" onchange="renderTable()"><option value="">All statuses</option><option>Open</option><option>Pending</option><option>Closed</option></select>
+          <select id="filter-status" onchange="renderTable()"><option value="">All statuses</option><option>Ongoing</option><option>Pending</option><option>Closed</option></select>
           <select id="filter-village" onchange="renderTable()"><option value="">All villages</option></select>
           <select id="filter-settlement" onchange="renderTable()"><option value="">All settlements</option></select>
         </div>
@@ -524,12 +524,12 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
         <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
           <div class="stat-card navy"><div class="stat-label">Total Cases</div><div class="stat-val" id="coord-total">0</div></div>
           <div class="stat-card gold"><div class="stat-label">Villages/Settlements</div><div class="stat-val" id="coord-villages">0</div></div>
-          <div class="stat-card warn"><div class="stat-label">Open Cases</div><div class="stat-val" id="coord-open">0</div></div>
+          <div class="stat-card warn"><div class="stat-label">Ongoing Cases</div><div class="stat-val" id="coord-open">0</div></div>
           <div class="stat-card success"><div class="stat-label">Closed Cases</div><div class="stat-val" id="coord-closed">0</div></div>
         </div>
         <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <div class="search-wrap" style="max-width:280px"><span class="search-icon">🔍</span><input type="text" id="coord-search" placeholder="Search village..." oninput="renderCoordinator()"></div>
-         <select id="coord-filter-status" onchange="renderCoordinator()"><option value="">All statuses</option><option>Open</option><option>Pending</option><option>Closed</option></select>
+         <select id="coord-filter-status" onchange="renderCoordinator()"><option value="">All statuses</option><option>Ongoing</option><option>Pending</option><option>Closed</option></select>
 <select id="coord-filter-settlement" onchange="renderCoordinator()"><option value="">All settlements</option></select>
 <button class="btn btn-outline btn-sm" onclick="coordSelectedVillage=null;renderCoordinator()">Clear selection</button>
         </div>
@@ -819,7 +819,7 @@ create policy "Auth users full access on audit_log"
             <select id="f-type"><option>Labour Dispute</option><option>Land Dispute</option><option>Family Matter</option><option>Criminal</option><option>Child Maintanance</option><option>Dept Disputes</option><option>Unfair Work Treatment</option><option>Civil</option><option>Inheritence Despute</option><option>Other</option></select>
           </div>
           <div class="field"><label>Case Status</label>
-            <select id="f-status"><option>Open</option><option>Pending</option><option>Closed</option></select>
+            <select id="f-status"><option>Ongoing</option><option>Pending</option><option>Closed</option></select>
           </div>
           <div class="field full"><label>Brief Description</label><textarea id="f-desc" placeholder="Describe the nature of the case..."></textarea></div>
           <div class="field full"><label>Assistance Given</label><textarea id="f-assist" placeholder="What assistance or advice was provided..."></textarea></div>
@@ -1372,7 +1372,7 @@ function showPage(page) {
 // ══════════════════════════════════════════════
 function updateStats() {
   document.getElementById('stat-total').textContent=cases.length;
-  document.getElementById('stat-open').textContent=cases.filter(c=>c.status==='Open').length;
+  document.getElementById('stat-ongoing').textContent=cases.filter(c=>c.status==='Ongoing').length;
   document.getElementById('stat-pending').textContent=cases.filter(c=>c.status==='Pending').length;
   document.getElementById('stat-closed').textContent=cases.filter(c=>c.status==='Closed').length;
   updateVillageFilter();
@@ -1473,7 +1473,7 @@ const matchSet = !fset || settlementUserIds.includes(c.createdBy);
 
   // Stats
   document.getElementById('coord-total').textContent=filtered.length;
-  document.getElementById('coord-open').textContent=filtered.filter(c=>c.status==='Open').length;
+document.getElementById('coord-open').textContent=filtered.filter(c=>c.status==='Ongoing').length;
   document.getElementById('coord-closed').textContent=filtered.filter(c=>c.status==='Closed').length;
 
   // Group by village
@@ -1492,7 +1492,7 @@ const matchSet = !fset || settlementUserIds.includes(c.createdBy);
     grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🗺️</div><p>No villages found.</p></div>';
   }
   villages.forEach(v=>{
-    const open=v.cases.filter(c=>c.status==='Open').length;
+    const open=v.cases.filter(c=>c.status==='Ongoing').length;
     const pending=v.cases.filter(c=>c.status==='Pending').length;
     const closed=v.cases.filter(c=>c.status==='Closed').length;
     const card=document.createElement('div');
@@ -1500,7 +1500,7 @@ const matchSet = !fset || settlementUserIds.includes(c.createdBy);
     card.innerHTML=`<div class="vc-name">📍 ${esc(v.name)}</div>
       <div class="vc-total" style="margin-bottom:6px">${v.cases.length} case${v.cases.length!==1?'s':''}</div>
       <div class="vc-stats">
-        ${open?`<span class="vc-stat open">${open} Open</span>`:''}
+        ${Ongoing?`<span class="vc-stat ongoing">${Ongoing} Ongoing</span>`:''}
         ${pending?`<span class="vc-stat pending">${pending} Pending</span>`:''}
         ${closed?`<span class="vc-stat closed">${closed} Closed</span>`:''}
       </div>`;
@@ -1595,7 +1595,7 @@ function openAddModal() {
   document.getElementById('f-dob').value='';
   document.getElementById('f-num').value=autoNum();
   document.getElementById('f-type').value='Labour Dispute';
-  document.getElementById('f-status').value='Open';
+  document.getElementById('f-status').value='Ongoing';
   document.getElementById('case-modal').classList.add('open');
 }
 
@@ -1619,7 +1619,7 @@ function editCase(idx) {
   document.getElementById('f-type').value=c.type||'Labour Dispute';
   document.getElementById('f-desc').value=c.desc||'';
   document.getElementById('f-assist').value=c.assist||'';
-  document.getElementById('f-status').value=c.status||'Open';
+  document.getElementById('f-status').value=c.status||'Ongoing';
   document.getElementById('case-modal').classList.add('open');
   document.getElementById('view-modal').classList.remove('open');
 }
@@ -1817,7 +1817,7 @@ function caseToRow(c) {
     type: c.type || '',
     description: c.desc || '',
     assistance: c.assist || '',
-    status: ['Open','Pending','Closed'].includes(c.status) ? c.status : 'Open',
+    status: ['Ongoing','Pending','Closed'].includes(c.status) ? c.status : 'Ongoing',
     contacts: c.contacts || '',
     updated_at: new Date().toISOString(),
     created_by: c.createdBy || null,
@@ -1832,7 +1832,7 @@ function rowToCase(r) {
     _id:r.id, num:r.num, name:r.name, idNumber:r.id_number||'',
     dob:r.date_of_birth||'', tribe:r.tribe||'', village:r.village||'',
     address:r.address||'', type:r.type||'', desc:r.description||'',
-    assist:r.assistance||'', status:r.status||'Open', contacts:r.contacts||'',
+    assist:r.assistance||'', status:r.status||'Ongoing', contacts:r.contacts||'',
     createdAt:r.created_at, createdBy:r.created_by, createdByName:r.created_by_name||'',
     updatedAt:r.updated_at, updatedBy:r.updated_by, updatedByName:r.updated_by_name||''
   };
@@ -1955,7 +1955,7 @@ function buildWorkbook() {
   const rows=cases.map(c=>[c.num,c.name,c.idNumber,c.dob,c.tribe,c.village,c.address,c.type,c.desc,c.assist,c.status,c.contacts,c.createdByName,c.updatedByName]);
   const ws=XLSX.utils.aoa_to_sheet([hdr,...rows]);
   ws['!cols']=[10,26,16,14,14,18,22,18,36,32,12,20,18,18].map(w=>({wch:w}));
-  const ws2=XLSX.utils.aoa_to_sheet([['Metric','Count'],['Total',cases.length],['Open',cases.filter(c=>c.status==='Open').length],['Pending',cases.filter(c=>c.status==='Pending').length],['Closed',cases.filter(c=>c.status==='Closed').length]]);
+  const ws2=XLSX.utils.aoa_to_sheet([['Metric','Count'],['Total',cases.length],['Ongoing',cases.filter(c=>c.status==='Ongoing').length],['Pending',cases.filter(c=>c.status==='Pending').length],['Closed',cases.filter(c=>c.status==='Closed').length]]);
   XLSX.utils.book_append_sheet(wb,ws,'Case Register');
   XLSX.utils.book_append_sheet(wb,ws2,'Summary');
   return wb;
@@ -2012,7 +2012,7 @@ function parseWorkbook(wb) {
         type:         String(r[col('type')]||'Other'),
         desc:         String(r[col('desc')]||''),
         assist:       String(r[col('assist')]||''),
-        status:       ['Open','Pending','Closed'].includes(r[col('status')]) ? r[col('status')] : 'Open',
+        status:       ['Ongoing','Pending','Closed'].includes(r[col('status')]) ? r[col('status')] : 'Ongoing',
         contacts:     String(r[col('contacts')]||''),
         createdByName:String(r[col('createdByName')]||''),
         updatedByName:String(r[col('updatedByName')]||''),
@@ -2031,7 +2031,7 @@ function parseWorkbook(wb) {
       type:     String(r[3]||'Other'),
       desc:     String(r[4]||''),
       assist:   String(r[5]||''),
-      status:   ['Open','Pending','Closed'].includes(r[6]) ? r[6] : 'Open',
+      status:   ['Ongoing','Pending','Closed'].includes(r[6]) ? r[6] : 'Ongoing',
       contacts: String(r[7]||''),
       createdByName: '',
       updatedByName: '',
@@ -2252,7 +2252,7 @@ function exportToPDF() {
   doc.text('Case Management System  ·  Confidential',32,17);
   doc.text('Generated: '+date+'  ·  By: '+currentUserName,pw-8,17,{align:'right'});
 
-  const stats=[{l:'Total',v:cases.length,c:NAVY},{l:'Open',v:cases.filter(c=>c.status==='Open').length,c:BLUE},{l:'Pending',v:cases.filter(c=>c.status==='Pending').length,c:AMBER},{l:'Closed',v:cases.filter(c=>c.status==='Closed').length,c:GREEN}];
+  const stats=[{l:'Total',v:cases.length,c:NAVY},{l:'Ongoing',v:cases.filter(c=>c.status==='Ongoing').length,c:BLUE},{l:'Pending',v:cases.filter(c=>c.status==='Pending').length,c:AMBER},{l:'Closed',v:cases.filter(c=>c.status==='Closed').length,c:GREEN}];
   const bW=42,bH=16,bY=30,gap=4,sX=(pw-(stats.length*bW+(stats.length-1)*gap))/2;
   stats.forEach((s,i)=>{
     const bx=sX+i*(bW+gap);
@@ -2265,7 +2265,7 @@ function exportToPDF() {
     doc.text(s.l.toUpperCase(),bx+bW/2,bY+14,{align:'center'});
   });
 
-  const scol=(s)=>s==='Open'?{textColor:BLUE,fillColor:[219,234,254]}:s==='Pending'?{textColor:AMBER,fillColor:[254,247,230]}:{textColor:GREEN,fillColor:[232,245,238]};
+  const scol=(s)=>s==='Ongoing'?{textColor:BLUE,fillColor:[219,234,254]}:s==='Pending'?{textColor:AMBER,fillColor:[254,247,230]}:{textColor:GREEN,fillColor:[232,245,238]};
   doc.autoTable({
     startY:bY+bH+6, margin:{left:6,right:6},
   
@@ -2328,7 +2328,9 @@ const visibleProfiles = fset
 
     visibleProfiles.forEach(p => {
       const isMe = p.id === currentUser.id;
-      const caseCount = countMap[p.id] || 0;
+      const countMap = {};
+filteredCaseCounts.forEach(r => { if(r.created_by) countMap[r.created_by] = (countMap[r.created_by]||0)+1; });
+const caseCount = countMap[p.id] || 0;
       const joined = p.created_at ? new Date(p.created_at).toLocaleDateString('en-GB') : '—';
       const roleBadge = {
         officer:     '<span style="background:#dbeafe;color:#1a4a8a;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600">Officer</span>',
@@ -2632,7 +2634,7 @@ function aiRenderCaseGrid() {
     <div class="csc" id="aic-${i}" onclick="aiSelectCase(${i})">
       <div class="csc-num">${esc(c.num||'—')}</div>
       <div class="csc-name">${esc(c.name||'Unknown')}</div>
-      <div class="csc-meta">${esc(c.type||'—')} · ${esc(c.village||'—')} · <span style="font-weight:600;color:${c.status==='Open'?'var(--info)':c.status==='Pending'?'var(--warn)':'var(--success)'}">${esc(c.status||'—')}</span></div>
+      <div class="csc-meta">${esc(c.type||'—')} · ${esc(c.village||'—')} · <span style="font-weight:600;color:${c.status==='Ongoing'?'var(--info)':c.status==='Pending'?'var(--warn)':'var(--success)'}">${esc(c.status||'—')}</span></div>
     </div>`).join('');
 }
 function aiSelectCase(i) {
