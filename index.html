@@ -660,10 +660,11 @@ create policy "Auth users full access on audit_log"
           <!-- DANGER ZONE -->
           <div class="table-card" style="border-color:#f5cccc">
             <div class="modal-head"><div><h2 style="color:var(--danger)">Danger Zone</h2><p>Irreversible actions</p></div></div>
-            <div class="modal-body" style="display:flex;gap:10px;flex-wrap:wrap">
-              <button class="btn btn-danger" onclick="clearAllData()">🗑️ Clear local data</button>
-              <button class="btn btn-danger" id="sb-clear-btn" onclick="clearSupabaseData()" style="display:none">☁️ Clear cloud data</button>
-            </div>
+            <div class="modal-body" style="display:flex;gap:10px;flex-wrap:wrap" id="danger-zone-btns">
+  <button class="btn btn-danger" id="clear-local-btn" onclick="clearAllData()">🗑️ Clear local data</button>
+  <button class="btn btn-danger" id="sb-clear-btn" onclick="clearSupabaseData()" style="display:none">☁️ Clear cloud data</button>
+  <span id="danger-zone-locked" style="font-size:12px;color:var(--text-muted);display:none">🔒 Admin access only</span>
+</div>
           </div>
 
         </div>
@@ -1501,7 +1502,7 @@ document.getElementById('coord-open').textContent=filtered.filter(c=>c.status===
     card.innerHTML=`<div class="vc-name">📍 ${esc(v.name)}</div>
       <div class="vc-total" style="margin-bottom:6px">${v.cases.length} case${v.cases.length!==1?'s':''}</div>
       <div class="vc-stats">
-        ${Ongoing?`<span class="vc-stat ongoing">${Ongoing} Ongoing</span>`:''}
+        ${open?`<span class="vc-stat ongoing">${open} Ongoing</span>`:''}
         ${pending?`<span class="vc-stat pending">${pending} Pending</span>`:''}
         ${closed?`<span class="vc-stat closed">${closed} Closed</span>`:''}
       </div>`;
@@ -1776,6 +1777,12 @@ function updateSbUI() {
   const show=(id,d='inline-flex')=>{ const el=document.getElementById(id); if(el) el.style.display=d; };
   if(connected){ hide('sb-connect-btn'); show('sb-disconnect-btn'); show('sb-pull-btn'); show('sb-push-btn'); show('sb-clear-btn'); show('sb-last-sync','block'); }
   else { show('sb-connect-btn'); hide('sb-disconnect-btn'); hide('sb-pull-btn'); hide('sb-push-btn'); hide('sb-clear-btn'); hide('sb-last-sync'); }
+  // Danger zone — admin only
+const isAdmin = currentUserRole === 'admin';
+const clearLocal = document.getElementById('clear-local-btn');
+const clearLocked = document.getElementById('danger-zone-locked');
+if (clearLocal) clearLocal.style.display = isAdmin ? 'inline-flex' : 'none';
+if (clearLocked) clearLocked.style.display = isAdmin ? 'none' : 'block';
 }
 
 async function connectSupabase() {
@@ -1936,6 +1943,7 @@ async function deleteCaseFromSupabase(c) {
 }
 
 async function clearSupabaseData() {
+  if(currentUserRole !== 'admin') { showToast('Admin access only','error'); return; }
   if(!sbClient) return;
   if(!confirm('Delete ALL cases from Supabase? Cannot be undone.')) return;
   try {
@@ -2222,6 +2230,7 @@ function idbDelete(key) {
 }
 
 async function clearAllData() {
+ if(currentUserRole !== 'admin') { showToast('Admin access only','error'); return; }
   if(!confirm('Clear all local cases?')) return;
   cases=[]; updateAll(); saveToDatabase(); showToast('Local data cleared','error');
 }
