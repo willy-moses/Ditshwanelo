@@ -505,7 +505,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
           <select id="filter-type" onchange="renderTable()"><option value="">All types</option><option>Labour Dispute</option><option>Land Dispute</option><option>Family Matter</option><option>Criminal</option><option>Civil</option><option>Other</option></select>
           <select id="filter-status" onchange="renderTable()"><option value="">All statuses</option><option>Ongoing</option><option>Pending</option><option>Closed</option></select>
           <select id="filter-village" onchange="renderTable()"><option value="">All villages</option></select>
-          <select id="filter-settlement" onchange="renderTable()"><option value="">All settlements</option></select>
+          <select id="filter-settlement" onchange="renderTable()" style="display:none"><option value="">All settlements</option></select>
         </div>
         <div class="table-card">
           <div class="table-header"><h3>Case Register</h3><span class="record-count" id="record-count">0 records</span></div>
@@ -530,7 +530,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
         <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <div class="search-wrap" style="max-width:280px"><span class="search-icon">🔍</span><input type="text" id="coord-search" placeholder="Search village..." oninput="renderCoordinator()"></div>
          <select id="coord-filter-status" onchange="renderCoordinator()"><option value="">All statuses</option><option>Ongoing</option><option>Pending</option><option>Closed</option></select>
-<select id="coord-filter-settlement" onchange="renderCoordinator()"><option value="">All settlements</option></select>
+<select id="coord-filter-settlement" onchange="renderCoordinator()" style="display:none"><option value="">All settlements</option></select>
 <button class="btn btn-outline btn-sm" onclick="coordSelectedVillage=null;renderCoordinator()">Clear selection</button>
         </div>
         <div class="village-grid" id="village-grid"></div>
@@ -681,7 +681,7 @@ create policy "Auth users full access on audit_log"
           <div class="table-header">
   <h3>User Management</h3>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <select id="admin-filter-settlement" onchange="loadAdminUsers()"><option value="">All settlements</option></select>
+    <select id="admin-filter-settlement" onchange="loadAdminUsers()" style="display:none"><option value="">All settlements</option></select>
     <span class="record-count" id="admin-user-count">0 users</span>
     <button class="btn btn-outline btn-sm" onclick="loadAdminUsers()">↻ Refresh</button>
   </div>
@@ -1779,10 +1779,17 @@ function updateSbUI() {
   else { show('sb-connect-btn'); hide('sb-disconnect-btn'); hide('sb-pull-btn'); hide('sb-push-btn'); hide('sb-clear-btn'); hide('sb-last-sync'); }
   // Danger zone — admin only
 const isAdmin = currentUserRole === 'admin';
-const clearLocal = document.getElementById('clear-local-btn');
-const clearLocked = document.getElementById('danger-zone-locked');
-if (clearLocal) clearLocal.style.display = isAdmin ? 'inline-flex' : 'none';
-if (clearLocked) clearLocked.style.display = isAdmin ? 'none' : 'block';
+  const isElevated = ['coordinator','admin'].includes(currentUserRole);
+  const clearLocal = document.getElementById('clear-local-btn');
+  const clearLocked = document.getElementById('danger-zone-locked');
+  if (clearLocal) clearLocal.style.display = isAdmin ? 'inline-flex' : 'none';
+  if (clearLocked) clearLocked.style.display = isAdmin ? 'none' : 'block';
+
+  // Settlement filter — only visible to coordinator and admin
+  ['filter-settlement','coord-filter-settlement','admin-filter-settlement'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isElevated ? '' : 'none';
+  });
 }
 
 async function connectSupabase() {
