@@ -505,6 +505,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
           <select id="filter-type" onchange="renderTable()"><option value="">All types</option><option>Labour Dispute</option><option>Land Dispute</option><option>Family Matter</option><option>Criminal</option><option>Civil</option><option>Other</option></select>
           <select id="filter-status" onchange="renderTable()"><option value="">All statuses</option><option>Open</option><option>Pending</option><option>Closed</option></select>
           <select id="filter-village" onchange="renderTable()"><option value="">All villages</option></select>
+          <select id="filter-settlement" onchange="renderTable()"><option value="">All settlements</option></select>
         </div>
         <div class="table-card">
           <div class="table-header"><h3>Case Register</h3><span class="record-count" id="record-count">0 records</span></div>
@@ -528,8 +529,9 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
         </div>
         <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <div class="search-wrap" style="max-width:280px"><span class="search-icon">🔍</span><input type="text" id="coord-search" placeholder="Search village..." oninput="renderCoordinator()"></div>
-          <select id="coord-filter-status" onchange="renderCoordinator()"><option value="">All statuses</option><option>Open</option><option>Pending</option><option>Closed</option></select>
-          <button class="btn btn-outline btn-sm" onclick="coordSelectedVillage=null;renderCoordinator()">Clear selection</button>
+         <select id="coord-filter-status" onchange="renderCoordinator()"><option value="">All statuses</option><option>Open</option><option>Pending</option><option>Closed</option></select>
+<select id="coord-filter-settlement" onchange="renderCoordinator()"><option value="">All settlements</option></select>
+<button class="btn btn-outline btn-sm" onclick="coordSelectedVillage=null;renderCoordinator()">Clear selection</button>
         </div>
         <div class="village-grid" id="village-grid"></div>
         <div class="table-card" id="coord-table-card" style="display:none">
@@ -676,12 +678,13 @@ create policy "Auth users full access on audit_log"
         </div>
         <div class="table-card">
           <div class="table-header">
-            <h3>User Management</h3>
-            <div style="display:flex;gap:8px;align-items:center">
-              <span class="record-count" id="admin-user-count">0 users</span>
-              <button class="btn btn-outline btn-sm" onclick="loadAdminUsers()">↻ Refresh</button>
-            </div>
-          </div>
+  <h3>User Management</h3>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <select id="admin-filter-settlement" onchange="loadAdminUsers()"><option value="">All settlements</option></select>
+    <span class="record-count" id="admin-user-count">0 users</span>
+    <button class="btn btn-outline btn-sm" onclick="loadAdminUsers()">↻ Refresh</button>
+  </div>
+</div>
           <div class="table-wrap">
             <table style="min-width:760px">
               <thead><tr><th>Full Name</th><th>Email</th><th>Role</th><th>Settlement</th><th>Cases</th><th>Joined</th><th>Change Role</th><th>Actions</th></tr></thead>
@@ -1004,6 +1007,7 @@ window.addEventListener('online', async () => {
   showToast('Back online — syncing...', 'success');
   if (sbClient && currentUser) {
     await pullFromSupabase();
+    loadSettlementFilter();
   }
 });
 window.addEventListener('offline', () => {
@@ -1295,9 +1299,10 @@ async function onAuthSuccess(user) {
   setSbStatus('connected','Connected');
   setOfflineMode(false);
   updateSbUI();
-  await pullFromSupabase();
-  await loadAuditLog();
-  await autoConnectExcel();
+  await loadAllProfiles();
+await pullFromSupabase();
+await loadAuditLog();
+await autoConnectExcel();
   updateDbUI();
 
   // Prompt to set PIN if none exists
@@ -1416,10 +1421,16 @@ function renderTable() {
   const ft=document.getElementById('filter-type').value;
   const fs=document.getElementById('filter-status').value;
   const fv=document.getElementById('filter-village').value;
-  const filtered=cases.map((c,i)=>({c,i})).filter(({c})=>{
-    const matchQ=!q||[c.num,c.name,c.idNumber,c.tribe,c.village,c.address,c.type,c.desc,c.contacts].join(' ').toLowerCase().includes(q);
-    return matchQ&&(!ft||c.type===ft)&&(!fs||c.status===fs)&&(!fv||c.village===fv);
-  });
+  const fset = document.getElementById('filter-settlement').value;
+const filtered=cases.map((c,i)=>({c,i})).filter(({c})=>{
+  const matchQ=!q||[c.num,c.name,c.idNumber,c.tribe,c.village,c.address,c.type,c.desc,c.contacts].join(' ').toLowerCase().includes(q);
+ // Find all user IDs assigned to the selected settlement
+const settlementUserIds = allProfiles
+  .filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase())
+  .map(p => p.id);
+const matchSet = !fset || settlementUserIds.includes(c.createdBy);
+  return matchQ&&(!ft||c.type===ft)&&(!fs||c.status===fs)&&(!fv||c.village===fv)&&matchSet;
+});
   document.getElementById('record-count').textContent=`${filtered.length} record${filtered.length!==1?'s':''}`;
   const tbody=document.getElementById('case-tbody');
   const empty=document.getElementById('case-empty');
@@ -1450,7 +1461,15 @@ function renderTable() {
 function renderCoordinator() {
   const q=document.getElementById('coord-search').value.toLowerCase();
   const fs=document.getElementById('coord-filter-status').value;
-  const filtered=fs?cases.filter(c=>c.status===fs):cases;
+  const fset = document.getElementById('coord-filter-settlement').value;
+  const filtered = cases.filter(c => {
+    const matchStatus = !fs || c.status === fs;
+   const settlementUserIds = allProfiles
+  .filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase())
+  .map(p => p.id);
+const matchSet = !fset || settlementUserIds.includes(c.createdBy);
+    return matchStatus && matchSet;
+  });
 
   // Stats
   document.getElementById('coord-total').textContent=filtered.length;
@@ -1832,6 +1851,8 @@ async function pullFromSupabase() {
     cases=data.map(rowToCase);
     saveCache({ cases, auditLog }); // cache for offline use
     updateAll();
+    await loadAllProfiles();
+await loadSettlementFilter();
     if(dbFileHandle) await writeToFile();
     const now=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     setSbStatus('connected','Connected');
@@ -2274,29 +2295,38 @@ let editingUserId = null;
 
 async function loadAdminUsers() {
   if (!sbClient || currentUserRole !== 'admin') return;
+  const fset = document.getElementById('admin-filter-settlement')?.value || '';
   try {
     const {data: profiles, error} = await sbClient
       .from('user_profiles').select('*').order('created_at', {ascending: true});
     if (error) throw error;
     allProfiles = profiles || [];
 
-    const {data: caseCounts} = await sbClient.from('cases').select('created_by');
-    const countMap = {};
-    (caseCounts||[]).forEach(r => {
-      if (r.created_by) countMap[r.created_by] = (countMap[r.created_by]||0) + 1;
-    });
+    const {data: caseCounts} = await sbClient.from('cases').select('created_by, village');
+    
+    // Filter cases by settlement if selected
+   const settlementUserIds = allProfiles
+  .filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase())
+  .map(p => p.id);
+const filteredCaseCounts = fset
+  ? (caseCounts||[]).filter(c => settlementUserIds.includes(c.created_by))
+  : (caseCounts||[]);
 
-    document.getElementById('admin-total-users').textContent = allProfiles.length;
-    document.getElementById('admin-officers').textContent = allProfiles.filter(p=>p.role==='officer').length;
-    document.getElementById('admin-coordinators').textContent = allProfiles.filter(p=>p.role==='coordinator').length;
-    document.getElementById('admin-user-count').textContent = allProfiles.length + ' users';
+const visibleProfiles = fset
+  ? allProfiles.filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase())
+  : allProfiles;
+
+    document.getElementById('admin-total-users').textContent = visibleProfiles.length;
+    document.getElementById('admin-officers').textContent = visibleProfiles.filter(p=>p.role==='officer').length;
+    document.getElementById('admin-coordinators').textContent = visibleProfiles.filter(p=>p.role==='coordinator').length;
+    document.getElementById('admin-user-count').textContent = visibleProfiles.length + ' users';
 
     const tbody = document.getElementById('admin-tbody');
     const empty = document.getElementById('admin-empty');
     tbody.innerHTML = '';
-    empty.style.display = allProfiles.length === 0 ? 'block' : 'none';
+    empty.style.display = visibleProfiles.length === 0 ? 'block' : 'none';
 
-    allProfiles.forEach(p => {
+    visibleProfiles.forEach(p => {
       const isMe = p.id === currentUser.id;
       const caseCount = countMap[p.id] || 0;
       const joined = p.created_at ? new Date(p.created_at).toLocaleDateString('en-GB') : '—';
@@ -2339,6 +2369,7 @@ async function loadAdminUsers() {
     showToast('Error loading users: ' + e.message, 'error');
   }
 }
+     
 
 async function changeUserRole(userId, newRole, selectEl) {
   if (currentUserRole !== 'admin') { showToast('Admin only', 'error'); return; }
@@ -2622,6 +2653,58 @@ function togglePw(id, btn){
   inp.type = show ? 'text' : 'password';
   btn.textContent = show ? '🙈' : '👁';
 }
+// Build settlement filter options from user_profiles
+async function loadSettlementFilter() {
+  if (!sbClient || !currentUser) return;
+  try {
+    const { data: profiles, error } = await sbClient
+      .from('user_profiles')
+      .select('settlement, full_name, role');
+
+    if (error) { console.warn('Settlement fetch error:', error.message); return; }
+    if (!profiles || profiles.length === 0) { console.log('No profiles found'); return; }
+
+    console.log('All profiles:', profiles); // debug — remove later
+
+    // Only use profiles that have a settlement set, any role
+    const withSettlement = profiles.filter(p => p.settlement && p.settlement.trim() !== '');
+    console.log('Profiles with settlement:', withSettlement); // debug
+
+    if (withSettlement.length === 0) {
+      console.log('No settlements assigned to any user yet.');
+      return;
+    }
+
+    const seen = new Set();
+    const opts = [];
+    withSettlement.forEach(p => {
+      const key = p.settlement.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        opts.push({
+          value: p.settlement.trim(),
+          label: `${p.settlement.trim()} (${p.full_name || 'Unknown'})`
+        });
+      }
+    });
+
+    opts.sort((a, b) => a.label.localeCompare(b.label));
+
+    ['filter-settlement', 'coord-filter-settlement', 'admin-filter-settlement'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      sel.innerHTML = '<option value="">All settlements</option>';
+      opts.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        sel.appendChild(opt);
+      });
+    });
+
+    console.log('Settlement filter populated with:', opts.map(o => o.label));
+  } catch(e) { console.warn('Settlement filter error:', e.message); }
+}
 // Custom
 function aiSetQ(q){ document.getElementById('ai-cq').value=q; }
 function aiCustomRun() {
@@ -2629,6 +2712,15 @@ function aiCustomRun() {
   if(!q){ showToast('Please type a question first','error'); return; }
   aiCall(`Analyse this Ditshwanelo case data and answer:\n\nQUESTION: ${q}\n\nDATA:\n${aiDigest()}`,
     'ai-cq-body','ai-cq-ubar','ai-cq-utxt','ai-cq-btn');
+}
+async function loadAllProfiles() {
+  if (!sbClient) return;
+  try {
+    const { data, error } = await sbClient
+      .from('user_profiles')
+      .select('id, full_name, role, settlement');
+    if (!error && data) allProfiles = data;
+  } catch(e) { console.warn('loadAllProfiles error:', e.message); }
 }
 </script>
 </body>
