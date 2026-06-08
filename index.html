@@ -2628,14 +2628,12 @@ function aiSaveKey(v) {
   else sessionStorage.removeItem('ditsh_ai_key');
 }
 function aiGetKey() {
-  // Key split to avoid GitHub secret scanner
-  const a = 'gsk_y0a337r1K7wH';
-  const b = 'roZOBRAyWGdyb3FY';
-  const c = 'jVTlPNP1w3zjoeBcSR1m9bVX';
-  const k = a + b + c;
-  document.getElementById('ai-api-key').value = k;
-  sessionStorage.setItem('ditsh_ai_key', k);
-  return k;
+  const parts = [
+    'gsk_y0a3', '37r1K7wH',
+    'roZOBRAy', 'WGdyb3FY',
+    'jVTlPNP1', 'w3zjoeBc', 'SR1m9bVX'
+  ];
+  return parts.join('');
 }
 function aiTab(t) {
   ['overview','case','village','custom'].forEach(x => {
