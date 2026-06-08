@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReceiptVault</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ink:#1a1a2e; --gold:#c9a84c; --gold2:#f0d080; --cream:#f8f5f0;
+  --white:#fff; --muted:#6b7280; --border:#e8e2d8; --green:#065f46;
+  --shadow:0 2px 12px rgba(26,26,46,.09);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Source Sans 3',sans-serif;background:var(--cream);color:var(--ink);min-height:100vh}
+
+header{background:var(--ink);color:#fff;padding:8px 36px;display:flex;align-items:center;justify-content:space-between;min-height:72px;position:sticky;top:0;z-index:200;box-shadow:0 2px 16px rgba(0,0,0,.3);flex-wrap:wrap;gap:8px}
+.logo{font-family:'Playfair Display',serif;font-size:26px;letter-spacing:-.5px;display:flex;align-items:center;gap:10px}
+.logo span{color:var(--gold)}
+.header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.total-badge{background:#2a2a40;border:1px solid #3a3a55;border-radius:10px;padding:6px 16px;text-align:right}
+.total-label{font-size:10px;color:#8888aa;letter-spacing:1.5px;text-transform:uppercase;display:block}
+.total-amt{font-size:20px;font-weight:700;color:var(--gold2);font-family:'Playfair Display',serif}
+
+#save-ind{font-size:12px;color:#aaa;display:flex;align-items:center;gap:7px;white-space:nowrap;max-width:280px}
+.dot{width:9px;height:9px;border-radius:50%;background:#6b7280;flex-shrink:0;transition:background .3s}
+.dot.linked{background:#10b981}
+.dot.saving{background:#f59e0b;animation:blink .5s infinite alternate}
+.dot.saved{background:#10b981}
+.dot.error{background:#ef4444}
+@keyframes blink{to{opacity:.3}}
+
+.btn{border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Source Sans 3',sans-serif;transition:opacity .15s,transform .1s;white-space:nowrap}
+.btn:hover{opacity:.85}.btn:active{transform:scale(.97)}
+.btn-gold{background:var(--gold);color:var(--ink)}
+.btn-outline{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.3)}
+.btn-ghost{background:transparent;color:var(--muted);border:1.5px solid var(--border)}
+.btn-sm{padding:5px 12px;font-size:12px;border-radius:6px}
+#file-input{display:none}
+
+.tabs{display:flex;background:var(--white);border-bottom:2px solid var(--border);padding-left:36px}
+.tab{background:none;border:none;border-bottom:3px solid transparent;padding:14px 22px;font-size:14px;font-weight:700;font-family:'Source Sans 3',sans-serif;color:var(--muted);cursor:pointer;margin-bottom:-2px;transition:color .2s,border-color .2s}
+.tab.active{color:var(--ink);border-bottom-color:var(--gold)}
+
+.body{max-width:980px;margin:0 auto;padding:32px 24px}
+.card{background:var(--white);border-radius:14px;padding:28px;margin-bottom:24px;box-shadow:var(--shadow)}
+.card-title{font-family:'Playfair Display',serif;font-size:19px;margin-bottom:20px}
+
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 24px}
+label.field{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:#374151}
+input[type="text"],input[type="number"],input[type="date"],select{border:1.5px solid var(--border);border-radius:8px;padding:10px 13px;font-size:14px;font-family:'Source Sans 3',sans-serif;background:#fafafa;color:var(--ink);outline:none;transition:border-color .2s;width:100%;-webkit-appearance:none;appearance:none}
+input:focus,select:focus{border-color:var(--gold);background:#fff}
+.select-wrap{position:relative}
+.select-wrap::after{content:'▾';position:absolute;right:13px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);font-size:13px}
+.form-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+
+.filter-bar{background:var(--white);border-radius:14px;padding:18px 22px;margin-bottom:24px;box-shadow:var(--shadow);display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.filter-bar label.field{flex:1;min-width:160px}
+
+.table-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead th{text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;border-bottom:2px solid var(--border)}
+tbody tr{border-bottom:1px solid #f3f0ea;transition:background .12s}
+tbody tr:hover{background:#fdf9f2}
+td{padding:12px 14px;font-size:14px;vertical-align:middle}
+tfoot td{padding:13px 14px;font-size:14px;border-top:2px solid var(--border)}
+.td-amt{font-family:'Courier New',monospace;color:var(--green);font-weight:700;font-size:15px}
+.td-from{font-weight:700}
+.td-notes{color:var(--muted);font-size:13px}
+.td-branch{font-size:13px;color:#5b21b6;font-weight:600}
+.badge{display:inline-block;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.3px}
+.branch-badge{display:inline-block;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.3px;background:#ede9fe;color:#5b21b6}
+.actions{display:flex;gap:4px}
+.icon-btn{background:none;border:none;cursor:pointer;font-size:15px;padding:4px 6px;border-radius:6px;transition:background .15s}
+.icon-btn:hover{background:#f3f0ea}
+.empty{text-align:center;color:var(--muted);padding:48px 0;font-size:14px}
+
+.manage-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px}
+.list-box{border:1.5px solid var(--border);border-radius:10px;padding:18px}
+.list-box-title{font-weight:700;font-size:14px;margin-bottom:14px}
+.add-row{display:flex;gap:8px;margin-bottom:14px}
+.add-row input{flex:1}
+.list-items{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto}
+.list-item{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f8f5f0;border-radius:8px;font-size:14px}
+.list-item span{flex:1}
+.list-item-del{background:none;border:none;cursor:pointer;color:#b91c1c;font-size:15px;padding:2px 6px;border-radius:5px;transition:background .15s}
+.list-item-del:hover{background:#fee2e2}
+.list-empty{font-size:13px;color:var(--muted);text-align:center;padding:16px 0}
+
+.sum-section{margin-bottom:30px}
+.sum-heading{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.sum-row{display:flex;align-items:center;gap:16px;padding:11px 0;border-bottom:1px solid #f3f0ea}
+.sum-left{flex:1}
+.sum-name{font-weight:700;font-size:14px;display:block;margin-bottom:6px}
+.bar-track{background:#f0ece4;border-radius:6px;height:8px;overflow:hidden}
+.bar-fill{height:100%;border-radius:6px;transition:width .5s}
+.sum-right{min-width:110px;text-align:right}
+.s-amt{font-weight:700;color:var(--green);font-family:'Courier New',monospace;font-size:15px;display:block}
+.s-pct{font-size:12px;color:var(--muted)}
+.grand-row{display:flex;justify-content:space-between;padding-top:18px;font-size:16px;font-weight:700;font-family:'Playfair Display',serif;border-top:2px solid var(--border);margin-top:6px}
+
+/* SETUP BANNER */
+.setup-banner{background:linear-gradient(135deg,#1a1a2e 0%,#2d2d52 100%);border-radius:14px;padding:32px 36px;margin-bottom:24px;color:#fff;display:flex;align-items:flex-start;gap:24px;flex-wrap:wrap}
+.setup-icon{font-size:48px;flex-shrink:0;margin-top:4px}
+.setup-text h2{font-family:'Playfair Display',serif;font-size:22px;color:var(--gold2);margin-bottom:10px}
+.setup-text p{font-size:14px;color:#bbb;line-height:1.7;max-width:540px}
+.setup-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.step-list{list-style:none;margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.step-list li{font-size:13px;color:#aaa;display:flex;align-items:center;gap:8px}
+.step-list li::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--gold);flex-shrink:0}
+
+.panel{display:none}.panel.active{display:block}
+
+/* ── BROWSER SUPPORT NOTICE ── */
+.compat-notice{background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:#856404;display:none}
+.compat-notice strong{display:block;margin-bottom:4px}
+
+#toast{position:fixed;bottom:24px;right:24px;padding:13px 22px;border-radius:10px;color:#fff;font-weight:700;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.2);opacity:0;transform:translateY(10px);transition:opacity .25s,transform .25s;pointer-events:none;z-index:999}
+#toast.show{opacity:1;transform:translateY(0)}
+
+/* ── PRINT / PDF ── */
+@media print{
+  header,.tabs,.filter-bar,.form-actions,.setup-banner,
+  .compat-notice,.btn,#toast,.icon-btn,.add-row,.list-item-del,
+  #panel-receipts,#panel-manage,#pdf-export-btn{display:none!important}
+  #panel-summary{display:block!important}
+  body{background:#fff;color:#000}
+  .card{box-shadow:none;border:1px solid #ddd}
+  .bar-fill{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .badge{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .branch-badge{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .pdf-header{display:block!important}
+}
+.pdf-header{display:none;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid var(--gold)}
+.pdf-header h1{font-family:'Playfair Display',serif;font-size:28px;color:var(--ink)}
+.pdf-header .pdf-subtitle{font-size:16px;color:#5b21b6;font-weight:700;margin-top:6px;display:flex;align-items:center;gap:8px}
+.pdf-header p{color:var(--muted);font-size:13px;margin-top:4px}
+
+@media(max-width:640px){
+  header{padding:12px 16px}
+  .body{padding:20px 12px}
+  .form-grid,.manage-grid{grid-template-columns:1fr}
+  .tabs{padding-left:12px}
+  .filter-bar{flex-direction:column;align-items:stretch}
+  .setup-banner{padding:22px 20px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <img src="data:image/png;base64,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" alt="Ditshwanelo logo" style="height:52px;width:52px;object-fit:contain;border-radius:50%;background:#fff;padding:3px;flex-shrink:0">
+    <div style="display:flex;flex-direction:column;line-height:1.1">
+      <span style="font-family:'Playfair Display',serif;font-size:20px;letter-spacing:-.3px;">Receipt<span style="color:var(--gold)">Vault</span></span>
+      <span style="font-size:10px;color:#8888aa;letter-spacing:1.5px;text-transform:uppercase;font-family:'Source Sans 3',sans-serif;font-weight:600;">Ditshwanelo · Botswana</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="save-ind">
+      <span class="dot" id="dot"></span>
+      <span id="save-txt">No file linked</span>
+    </div>
+    <div class="total-badge">
+      <span class="total-label">Grand Total</span>
+      <span class="total-amt" id="header-total">BWP 0.00</span>
+    </div>
+    <button class="btn btn-outline" onclick="openExistingFile()">📂 Open File</button>
+    <button class="btn btn-gold"    onclick="createNewFile()">✨ New File</button>
+    <input type="file" id="file-input" accept=".xlsx,.xls" onchange="legacyLoad(event)">
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('receipts',this)">📄 Receipts</button>
+  <button class="tab" onclick="switchTab('summary',this)">📊 Summary</button>
+  <button class="tab" onclick="switchTab('manage',this)">⚙️ Manage Lists</button>
+</div>
+
+<div class="body">
+
+  <!-- ══ RECEIPTS ══ -->
+  <div id="panel-receipts" class="panel active">
+
+    <div class="compat-notice" id="compat-notice">
+      <strong>⚠️ Auto-save not available in this browser</strong>
+      Your browser doesn't support the File System Access API. Use <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> for automatic saving. In this browser you can still load and manually download your file using the button below.
+      <br><br><button class="btn btn-ghost btn-sm" onclick="document.getElementById('file-input').click()">📂 Load .xlsx file (manual mode)</button>
+    </div>
+
+    <div class="setup-banner" id="setup-banner">
+      <div class="setup-icon">🗄️</div>
+      <div class="setup-text">
+        <h2>Link your Excel file as the database</h2>
+        <p>ReceiptVault writes every change directly back to your <strong>.xlsx file</strong> — no manual saving required. If you close or refresh the browser, just re-open the same file and all your data is intact.</p>
+        <ul class="step-list">
+          <li>Open an existing receipts file to continue where you left off</li>
+          <li>Or create a brand-new file to start fresh</li>
+          <li>Every add, edit or delete saves automatically within a second</li>
+        </ul>
+        <div class="setup-actions">
+          <button class="btn btn-gold" onclick="openExistingFile()">📂 Open Existing File</button>
+          <button class="btn btn-outline" onclick="createNewFile()">✨ Create New File</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" id="form-title">➕ Add Receipt</div>
+      <div class="form-grid">
+        <label class="field">Date *
+          <input type="date" id="f-date">
+        </label>
+        <label class="field">Amount (BWP) *
+          <input type="number" id="f-amount" min="0" step="0.01" placeholder="0.00">
+        </label>
+        <label class="field">From (Company) *
+          <div class="select-wrap">
+            <select id="f-from"><option value="">— Select company —</option></select>
+          </div>
+        </label>
+        <label class="field">Category *
+          <div class="select-wrap">
+            <select id="f-purpose"><option value="">— Select category —</option></select>
+          </div>
+        </label>
+        <!-- NEW: Branch field -->
+        <label class="field">Branch Name *
+          <div class="select-wrap">
+            <select id="f-branch"><option value="">— Select branch —</option></select>
+          </div>
+        </label>
+        <label class="field">Notes (optional)
+          <input type="text" id="f-notes" placeholder="Extra details…">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="cancel-btn" style="display:none" onclick="cancelEdit()">Cancel</button>
+        <button class="btn btn-gold" id="submit-btn" onclick="submitForm()">Add Receipt</button>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <label class="field">🔍 Company
+        <div class="select-wrap">
+          <select id="fc-company" onchange="renderTable()"><option value="">All companies</option></select>
+        </div>
+      </label>
+      <label class="field">🗂️ Category
+        <div class="select-wrap">
+          <select id="fc-purpose" onchange="renderTable()"><option value="">All categories</option></select>
+        </div>
+      </label>
+      <!-- NEW: Branch filter -->
+      <label class="field">🏘️ Branch
+        <div class="select-wrap">
+          <select id="fc-branch" onchange="renderTable()"><option value="">All branches</option></select>
+        </div>
+      </label>
+      <button class="btn btn-ghost" style="align-self:flex-end" onclick="clearFilters()">✕ Clear</button>
+    </div>
+
+    <div class="card">
+      <div class="table-header-row">
+        <div class="card-title" id="table-title" style="margin-bottom:0">Receipts (0)</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>From</th><th>Branch</th><th>Category</th><th>Notes</th><th>Amount</th><th></th></tr></thead>
+          <tbody id="tbody"></tbody>
+          <tfoot id="tfoot"></tfoot>
+        </table>
+        <div class="empty" id="empty-msg">No receipts yet. Add companies, categories &amp; branches in <strong>Manage Lists</strong>, then add receipts here.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SUMMARY ══ -->
+  <div id="panel-summary" class="panel">
+    <div class="card">
+      <!-- Visible only when printing -->
+      <div class="pdf-header">
+        <h1>🧾 ReceiptVault — Spending Summary</h1>
+        <div class="pdf-subtitle" id="pdf-branch-line"></div>
+        <p id="pdf-dateline"></p>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+        <div class="card-title" style="margin-bottom:0">📊 Spending Summary</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label class="field" style="flex-direction:row;align-items:center;gap:8px;font-size:13px;margin:0">
+            🏘️ Filter by Branch:
+            <div class="select-wrap" style="min-width:160px">
+              <select id="sum-branch" onchange="renderSummary()" style="padding:7px 32px 7px 12px">
+                <option value="">All branches</option>
+              </select>
+            </div>
+          </label>
+          <button id="pdf-export-btn" class="btn btn-gold" onclick="exportPDF()">🖨️ Export as PDF</button>
+        </div>
+      </div>
+      <div id="summary-body"><div class="empty">No receipts to summarise.</div></div>
+    </div>
+  </div>
+
+  <!-- ══ MANAGE LISTS ══ -->
+  <div id="panel-manage" class="panel">
+    <div class="card">
+      <div class="card-title">⚙️ Manage Companies, Categories &amp; Branches</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:22px">
+        Changes save automatically to your linked Excel file.
+      </p>
+      <div class="manage-grid">
+        <div class="list-box">
+          <div class="list-box-title">🏢 Companies</div>
+          <div class="add-row">
+            <input type="text" id="new-company" placeholder="e.g. Shoprite" onkeydown="if(event.key==='Enter')addCompany()">
+            <button class="btn btn-gold btn-sm" onclick="addCompany()">Add</button>
+          </div>
+          <div class="list-items" id="company-list"><div class="list-empty">No companies yet.</div></div>
+        </div>
+        <div class="list-box">
+          <div class="list-box-title">🗂️ Categories</div>
+          <div class="add-row">
+            <input type="text" id="new-category" placeholder="e.g. Fuel" onkeydown="if(event.key==='Enter')addCategory()">
+            <button class="btn btn-gold btn-sm" onclick="addCategory()">Add</button>
+          </div>
+          <div class="list-items" id="category-list"><div class="list-empty">No categories yet.</div></div>
+        </div>
+        <!-- NEW: Branches list -->
+        <div class="list-box">
+          <div class="list-box-title">🏘️ Branches</div>
+          <div class="add-row">
+            <input type="text" id="new-branch" placeholder="e.g. Gantsi" onkeydown="if(event.key==='Enter')addBranch()">
+            <button class="btn btn-gold btn-sm" onclick="addBranch()">Add</button>
+          </div>
+          <div class="list-items" id="branch-list"><div class="list-empty">No branches yet.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════ */
+var receipts   = [];
+var companies  = [];
+var categories = [];
+var branches   = [];   // NEW
+var editId     = null;
+var nextId     = 1;
+var fileHandle = null;
+var autoSaveTimer = null;
+
+var PALETTE = [
+  {bg:'#fef3c7',fg:'#92400e'},{bg:'#d1fae5',fg:'#065f46'},
+  {bg:'#dbeafe',fg:'#1e40af'},{bg:'#ede9fe',fg:'#5b21b6'},
+  {bg:'#fce7f3',fg:'#9d174d'},{bg:'#e0f2fe',fg:'#0369a1'},
+  {bg:'#fee2e2',fg:'#991b1b'},{bg:'#fff7ed',fg:'#c2410c'},
+  {bg:'#f0fdf4',fg:'#166534'},{bg:'#fdf4ff',fg:'#7e22ce'},
+  {bg:'#fff1f2',fg:'#9f1239'},{bg:'#ecfdf5',fg:'#065f46'}
+];
+var BAR_COLORS = ['#c9a84c','#5b8dee','#34c98a','#e05c5c','#a78bfa','#f97316','#14b8a6','#ec4899','#84cc16','#6b7280'];
+
+var FSAPI = !!window.showOpenFilePicker;
+
+/* ═══════════════════════════════════════════
+   BROWSER COMPAT CHECK
+═══════════════════════════════════════════ */
+if(!FSAPI){
+  document.getElementById('compat-notice').style.display='block';
+}
+
+/* ═══════════════════════════════════════════
+   OPEN EXISTING FILE
+═══════════════════════════════════════════ */
+async function openExistingFile(){
+  if(!FSAPI){ document.getElementById('file-input').click(); return; }
+  try{
+    var [handle] = await window.showOpenFilePicker({
+      types:[{description:'Excel Workbook',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}],
+      multiple:false
+    });
+    fileHandle = handle;
+    var file = await handle.getFile();
+    await parseWorkbook(file);
+    setLinked(file.name);
+    toast('Linked to '+file.name+' — every change saves automatically ✅');
+  }catch(e){
+    if(e.name!=='AbortError') toast('Could not open file.','err');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   CREATE NEW FILE
+═══════════════════════════════════════════ */
+async function createNewFile(){
+  if(!FSAPI){
+    receipts=[]; companies=[]; categories=[]; branches=[]; nextId=1; fileHandle=null;
+    populateDropdowns(); renderManage(); renderTable();
+    setDotState('error','No auto-save (use Chrome/Edge)');
+    document.getElementById('setup-banner').style.display='none';
+    toast('Started fresh. Data lives in memory only — browser limitation.','err');
+    return;
+  }
+  try{
+    var handle = await window.showSaveFilePicker({
+      suggestedName:'receipts.xlsx',
+      types:[{description:'Excel Workbook',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}]
+    });
+    fileHandle = handle;
+    receipts=[]; companies=[]; categories=[]; branches=[]; nextId=1;
+    populateDropdowns(); renderManage(); renderTable();
+    setLinked(handle.name);
+    await writeToDisk();
+    toast('Created '+handle.name+' — auto-saving enabled ✅');
+  }catch(e){
+    if(e.name!=='AbortError') toast('Could not create file.','err');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   LEGACY FALLBACK LOAD
+═══════════════════════════════════════════ */
+function legacyLoad(e){
+  var file = e.target.files[0];
+  if(!file) return;
+  parseWorkbook(file).then(function(){
+    document.getElementById('setup-banner').style.display='none';
+    setDotState('linked','Loaded (manual mode — no auto-save)');
+    toast('Loaded '+file.name+'. Note: auto-save requires Chrome/Edge.');
+  });
+  e.target.value='';
+}
+
+/* ═══════════════════════════════════════════
+   PARSE WORKBOOK
+═══════════════════════════════════════════ */
+function parseWorkbook(file){
+  return new Promise(function(resolve,reject){
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        var wb = XLSX.read(ev.target.result,{type:'array'});
+
+        receipts = [];
+        if(wb.Sheets['Receipts']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Receipts'],{defval:''}).forEach(function(r){
+            if(!r['Date'] && !r['Amount']) return;
+            receipts.push({
+              id:nextId++,
+              date:String(r['Date']||''),
+              amount:parseFloat(r['Amount'])||0,
+              from:String(r['From']||''),
+              purpose:String(r['Purpose']||''),
+              branch:String(r['Branch']||''),   // NEW
+              notes:String(r['Notes']||'')
+            });
+          });
+        }
+
+        companies = [];
+        if(wb.Sheets['Companies']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Companies'],{defval:''}).forEach(function(r,i){
+            if(r['Name']) companies.push({
+              name:String(r['Name']),
+              color:{bg:String(r['ColorBg']||PALETTE[i%PALETTE.length].bg),fg:String(r['ColorFg']||PALETTE[i%PALETTE.length].fg)}
+            });
+          });
+        }
+
+        categories = [];
+        if(wb.Sheets['Categories']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Categories'],{defval:''}).forEach(function(r,i){
+            if(r['Name']) categories.push({
+              name:String(r['Name']),
+              color:{bg:String(r['ColorBg']||PALETTE[i%PALETTE.length].bg),fg:String(r['ColorFg']||PALETTE[i%PALETTE.length].fg)}
+            });
+          });
+        }
+
+        // NEW: load branches
+        branches = [];
+        if(wb.Sheets['Branches']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Branches'],{defval:''}).forEach(function(r){
+            if(r['Name']) branches.push({name:String(r['Name'])});
+          });
+        }
+
+        populateDropdowns(); renderManage(); renderTable();
+        resolve();
+      }catch(err){ toast('Could not read file.','err'); reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/* ═══════════════════════════════════════════
+   BUILD WORKBOOK
+═══════════════════════════════════════════ */
+function buildWorkbook(){
+  var wb = XLSX.utils.book_new();
+
+  var rRows = receipts.map(function(r){
+    return {Date:r.date, Amount:r.amount, From:r.from, Purpose:r.purpose, Branch:r.branch||'', Notes:r.notes||''};
+  });
+  var wsR = XLSX.utils.json_to_sheet(
+    rRows.length ? rRows : [{Date:'',Amount:'',From:'',Purpose:'',Branch:'',Notes:''}],
+    {header:['Date','Amount','From','Purpose','Branch','Notes']}
+  );
+  wsR['!cols']=[{wch:14},{wch:12},{wch:24},{wch:18},{wch:18},{wch:32}];
+  XLSX.utils.book_append_sheet(wb,wsR,'Receipts');
+
+  var cRows = companies.map(function(c){return{Name:c.name,ColorBg:c.color.bg,ColorFg:c.color.fg};});
+  var wsC = XLSX.utils.json_to_sheet(cRows.length?cRows:[{Name:'',ColorBg:'',ColorFg:''}],{header:['Name','ColorBg','ColorFg']});
+  wsC['!cols']=[{wch:24},{wch:12},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,wsC,'Companies');
+
+  var kRows = categories.map(function(c){return{Name:c.name,ColorBg:c.color.bg,ColorFg:c.color.fg};});
+  var wsK = XLSX.utils.json_to_sheet(kRows.length?kRows:[{Name:'',ColorBg:'',ColorFg:''}],{header:['Name','ColorBg','ColorFg']});
+  wsK['!cols']=[{wch:24},{wch:12},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,wsK,'Categories');
+
+  // NEW: Branches sheet
+  var bRows = branches.map(function(b){return{Name:b.name};});
+  var wsB = XLSX.utils.json_to_sheet(bRows.length?bRows:[{Name:''}],{header:['Name']});
+  wsB['!cols']=[{wch:24}];
+  XLSX.utils.book_append_sheet(wb,wsB,'Branches');
+
+  return XLSX.write(wb,{bookType:'xlsx',type:'array'});
+}
+
+/* ═══════════════════════════════════════════
+   WRITE TO DISK
+═══════════════════════════════════════════ */
+async function writeToDisk(){
+  if(!fileHandle) return;
+  setDotState('saving', 'Saving…');
+  try{
+    var writable = await fileHandle.createWritable();
+    var data = buildWorkbook();
+    await writable.write(new Blob([data],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    await writable.close();
+    var name = fileHandle.name;
+    setDotState('saved','✅ Saved · '+name);
+    setTimeout(function(){ if(fileHandle) setDotState('linked','Linked: '+name); },1800);
+  }catch(e){
+    setDotState('error','⚠️ Save failed — check permissions');
+    toast('Auto-save failed: '+e.message,'err');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   SCHEDULE AUTO-SAVE
+═══════════════════════════════════════════ */
+function scheduleAutoSave(){
+  renderTable();
+  if(!fileHandle) return;
+  if(autoSaveTimer) clearTimeout(autoSaveTimer);
+  setDotState('saving','Saving…');
+  autoSaveTimer = setTimeout(function(){ writeToDisk(); }, 900);
+}
+
+/* ═══════════════════════════════════════════
+   STATUS HELPERS
+═══════════════════════════════════════════ */
+function setLinked(name){
+  document.getElementById('setup-banner').style.display='none';
+  setDotState('linked','Linked: '+name);
+}
+function setDotState(state,txt){
+  var d = document.getElementById('dot');
+  d.className = 'dot '+state;
+  document.getElementById('save-txt').textContent = txt;
+}
+
+/* ═══════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════ */
+function fmt(n){return 'BWP '+parseFloat(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function toast(msg,type){
+  var t=document.getElementById('toast');
+  t.textContent=msg; t.style.background=type==='err'?'#ef4444':'#10b981';
+  t.classList.add('show'); setTimeout(function(){t.classList.remove('show');},3200);
+}
+function nextColor(arr){return PALETTE[arr.length%PALETTE.length];}
+
+function switchTab(name,btn){
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('panel-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='summary') renderSummary();
+}
+
+/* ═══════════════════════════════════════════
+   BADGE
+═══════════════════════════════════════════ */
+function badgeForCat(name){
+  for(var i=0;i<categories.length;i++){
+    if(categories[i].name===name){
+      var c=categories[i].color||{bg:'#f3f4f6',fg:'#374151'};
+      return '<span class="badge" style="background:'+c.bg+';color:'+c.fg+'">'+esc(name)+'</span>';
+    }
+  }
+  return '<span class="badge" style="background:#f3f4f6;color:#374151">'+esc(name||'—')+'</span>';
+}
+
+/* ═══════════════════════════════════════════
+   DROPDOWNS
+═══════════════════════════════════════════ */
+function populateDropdowns(){
+  // Company dropdowns
+  ['f-from','fc-company'].forEach(function(id,i){
+    var sel=document.getElementById(id),cur=sel.value;
+    sel.innerHTML='<option value="">'+(i===0?'— Select company —':'All companies')+'</option>';
+    companies.forEach(function(item){
+      var o=document.createElement('option');o.value=item.name;o.textContent=item.name;sel.appendChild(o);
+    });
+    if(cur) sel.value=cur;
+  });
+  // Category dropdowns
+  ['f-purpose','fc-purpose'].forEach(function(id,i){
+    var sel=document.getElementById(id),cur=sel.value;
+    sel.innerHTML='<option value="">'+(i===0?'— Select category —':'All categories')+'</option>';
+    categories.forEach(function(item){
+      var o=document.createElement('option');o.value=item.name;o.textContent=item.name;sel.appendChild(o);
+    });
+    if(cur) sel.value=cur;
+  });
+  // Branch dropdowns (form, filter, summary)
+  ['f-branch','fc-branch','sum-branch'].forEach(function(id,i){
+    var sel=document.getElementById(id),cur=sel.value;
+    sel.innerHTML='<option value="">'+(i===0?'— Select branch —':'All branches')+'</option>';
+    branches.forEach(function(item){
+      var o=document.createElement('option');o.value=item.name;o.textContent=item.name;sel.appendChild(o);
+    });
+    if(cur) sel.value=cur;
+  });
+}
+
+/* ═══════════════════════════════════════════
+   RENDER MANAGE LISTS
+═══════════════════════════════════════════ */
+function renderManage(){
+  renderList('company-list', companies, delCompany);
+  renderList('category-list', categories, delCategory);
+  renderBranchList();
+}
+function renderList(id, arr, fn){
+  var el=document.getElementById(id);
+  if(!arr.length){el.innerHTML='<div class="list-empty">Nothing added yet.</div>';return;}
+  el.innerHTML=arr.map(function(item,i){
+    var c=item.color||{bg:'#f3f4f6',fg:'#374151'};
+    return '<div class="list-item">'+
+      '<span class="badge" style="background:'+c.bg+';color:'+c.fg+';margin-right:8px">'+esc(item.name)+'</span>'+
+      '<span>'+esc(item.name)+'</span>'+
+      '<button class="list-item-del" onclick="'+fn.name+'('+i+')">✕</button></div>';
+  }).join('');
+}
+function renderBranchList(){
+  var el=document.getElementById('branch-list');
+  if(!branches.length){el.innerHTML='<div class="list-empty">Nothing added yet.</div>';return;}
+  el.innerHTML=branches.map(function(item,i){
+    return '<div class="list-item">'+
+      '<span class="branch-badge" style="margin-right:8px">📍 '+esc(item.name)+'</span>'+
+      '<span>'+esc(item.name)+'</span>'+
+      '<button class="list-item-del" onclick="delBranch('+i+')">✕</button></div>';
+  }).join('');
+}
+
+/* ═══════════════════════════════════════════
+   COMPANIES
+═══════════════════════════════════════════ */
+function addCompany(){
+  var val=document.getElementById('new-company').value.trim();
+  if(!val) return toast('Enter a company name.','err');
+  for(var i=0;i<companies.length;i++) if(companies[i].name.toLowerCase()===val.toLowerCase()) return toast('"'+val+'" already exists.','err');
+  companies.push({name:val,color:nextColor(companies)});
+  document.getElementById('new-company').value='';
+  renderManage(); populateDropdowns(); scheduleAutoSave();
+  toast('"'+val+'" added to companies.');
+}
+function delCompany(i){
+  var name=companies[i].name;
+  if(!confirm('Delete company "'+name+'"? It will still appear on existing receipts.')) return;
+  companies.splice(i,1);
+  renderManage(); populateDropdowns(); scheduleAutoSave();
+  toast('"'+name+'" removed.');
+}
+
+/* ═══════════════════════════════════════════
+   CATEGORIES
+═══════════════════════════════════════════ */
+function addCategory(){
+  var val=document.getElementById('new-category').value.trim();
+  if(!val) return toast('Enter a category name.','err');
+  for(var i=0;i<categories.length;i++) if(categories[i].name.toLowerCase()===val.toLowerCase()) return toast('"'+val+'" already exists.','err');
+  categories.push({name:val,color:nextColor(categories)});
+  document.getElementById('new-category').value='';
+  renderManage(); populateDropdowns(); scheduleAutoSave();
+  toast('"'+val+'" added to categories.');
+}
+function delCategory(i){
+  var name=categories[i].name;
+  if(!confirm('Delete category "'+name+'"? It will still appear on existing receipts.')) return;
+  categories.splice(i,1);
+  renderManage(); populateDropdowns(); scheduleAutoSave();
+  toast('"'+name+'" removed.');
+}
+
+/* ═══════════════════════════════════════════
+   BRANCHES (NEW)
+═══════════════════════════════════════════ */
+function addBranch(){
+  var val=document.getElementById('new-branch').value.trim();
+  if(!val) return toast('Enter a branch name.','err');
+  for(var i=0;i<branches.length;i++) if(branches[i].name.toLowerCase()===val.toLowerCase()) return toast('"'+val+'" already exists.','err');
+  branches.push({name:val});
+  document.getElementById('new-branch').value='';
+  renderManage(); populateDropdowns(); scheduleAutoSave();
+  toast('"'+val+'" added to branches.');
+}
+function delBranch(i){
+  var name=branches[i].name;
+  if(!confirm('Delete branch "'+name+'"? It will still appear on existing receipts.')) return;
+  branches.splice(i,1);
+  renderManage(); populateDropdowns(); scheduleAutoSave();
+  toast('"'+name+'" removed.');
+}
+
+/* ═══════════════════════════════════════════
+   FILTER
+═══════════════════════════════════════════ */
+function filteredReceipts(){
+  var fc=document.getElementById('fc-company').value;
+  var fp=document.getElementById('fc-purpose').value;
+  var fb=document.getElementById('fc-branch').value;
+  return receipts.filter(function(r){
+    return(!fc||r.from===fc)&&(!fp||r.purpose===fp)&&(!fb||r.branch===fb);
+  });
+}
+function clearFilters(){
+  document.getElementById('fc-company').value='';
+  document.getElementById('fc-purpose').value='';
+  document.getElementById('fc-branch').value='';
+  renderTable();
+}
+
+/* ═══════════════════════════════════════════
+   RENDER TABLE
+═══════════════════════════════════════════ */
+function renderTable(){
+  var list=filteredReceipts();
+  var tbody=document.getElementById('tbody');
+  var tfoot=document.getElementById('tfoot');
+  var empty=document.getElementById('empty-msg');
+
+  document.getElementById('header-total').textContent=fmt(receipts.reduce(function(s,r){return s+r.amount;},0));
+  document.getElementById('table-title').textContent='Receipts ('+list.length+')';
+
+  if(!list.length){tbody.innerHTML='';tfoot.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  var total=list.reduce(function(s,r){return s+r.amount;},0);
+
+  tbody.innerHTML=list.map(function(r){
+    return '<tr>'+
+      '<td>'+esc(r.date)+'</td>'+
+      '<td class="td-from">'+esc(r.from)+'</td>'+
+      '<td><span class="branch-badge">📍 '+esc(r.branch||'—')+'</span></td>'+
+      '<td>'+badgeForCat(r.purpose)+'</td>'+
+      '<td class="td-notes">'+(r.notes?esc(r.notes):'—')+'</td>'+
+      '<td class="td-amt">'+fmt(r.amount)+'</td>'+
+      '<td><div class="actions">'+
+        '<button class="icon-btn" onclick="startEdit('+r.id+')" title="Edit">✏️</button>'+
+        '<button class="icon-btn" onclick="delReceipt('+r.id+')" title="Delete">🗑️</button>'+
+      '</div></td></tr>';
+  }).join('');
+
+  var fc=document.getElementById('fc-company').value;
+  var fp=document.getElementById('fc-purpose').value;
+  var fb=document.getElementById('fc-branch').value;
+  var parts=[];if(fc)parts.push(fc);if(fp)parts.push(fp);if(fb)parts.push('Branch: '+fb);
+  var label=parts.length?'Total — '+parts.join(' + '):'Grand Total';
+  tfoot.innerHTML='<tr><td colspan="5" style="font-weight:700">'+esc(label)+'</td>'+
+    '<td class="td-amt" style="font-size:16px">'+fmt(total)+'</td><td></td></tr>';
+}
+
+/* ═══════════════════════════════════════════
+   RENDER SUMMARY
+═══════════════════════════════════════════ */
+function renderSummary(){
+  var body=document.getElementById('summary-body');
+  var selectedBranch=document.getElementById('sum-branch').value;
+
+  // Filter receipts by selected branch (if any)
+  var src = selectedBranch
+    ? receipts.filter(function(r){return r.branch===selectedBranch;})
+    : receipts;
+
+  if(!src.length){
+    body.innerHTML='<div class="empty">No receipts'+(selectedBranch?' for branch "'+esc(selectedBranch)+'"':'')+' to summarise.</div>';
+    return;
+  }
+  var total=src.reduce(function(s,r){return s+r.amount;},0);
+
+  function group(key){
+    var m={};
+    src.forEach(function(r){var k=r[key]||'Unknown';m[k]=(m[k]||0)+r.amount;});
+    return Object.keys(m).map(function(k){return[k,m[k]];}).sort(function(a,b){return b[1]-a[1];});
+  }
+  function rows(entries,useBadge){
+    return entries.map(function(e,i){
+      var pct=total?(e[1]/total*100):0;
+      var nameHtml=useBadge?'<div style="margin-bottom:6px">'+badgeForCat(e[0])+'</div>':'<span class="sum-name">'+esc(e[0])+'</span>';
+      return '<div class="sum-row">'+
+        '<div class="sum-left">'+nameHtml+
+          '<div class="bar-track"><div class="bar-fill" style="width:'+pct.toFixed(1)+'%;background:'+BAR_COLORS[i%BAR_COLORS.length]+'"></div></div></div>'+
+        '<div class="sum-right"><span class="s-amt">'+fmt(e[1])+'</span><span class="s-pct">'+pct.toFixed(1)+'%</span></div></div>';
+    }).join('');
+  }
+
+  // Branch breakdown section (only when showing all branches)
+  var branchSection = '';
+  if(!selectedBranch){
+    branchSection = '<div class="sum-section"><div class="sum-heading">By Branch</div>'+rows(group('branch'),false)+'</div>';
+  }
+
+  body.innerHTML=
+    '<div class="sum-section"><div class="sum-heading">By Category</div>'+rows(group('purpose'),true)+'</div>'+
+    '<div class="sum-section"><div class="sum-heading">By Company</div>'+rows(group('from'),false)+'</div>'+
+    branchSection+
+    '<div class="grand-row"><span>Grand Total'+(selectedBranch?' — '+esc(selectedBranch)+' Branch':'')+'</span><span>'+fmt(total)+'</span></div>';
+}
+
+/* ═══════════════════════════════════════════
+   EXPORT SUMMARY AS PDF
+═══════════════════════════════════════════ */
+function exportPDF(){
+  renderSummary();
+  var selectedBranch = document.getElementById('sum-branch').value;
+  var now = new Date();
+
+  // Set branch line in PDF header
+  var branchLine = document.getElementById('pdf-branch-line');
+  if(selectedBranch){
+    branchLine.innerHTML = '📍 Ditshwanelo Branch — <strong>'+esc(selectedBranch)+'</strong>';
+    branchLine.style.display='flex';
+  } else {
+    branchLine.innerHTML = '📍 All Branches — Ditshwanelo';
+    branchLine.style.display='flex';
+  }
+
+  document.getElementById('pdf-dateline').textContent =
+    'Generated: '+now.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})+
+    ' at '+now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})+
+    (fileHandle ? ' · File: '+fileHandle.name : '');
+  window.print();
+}
+
+/* ═══════════════════════════════════════════
+   FORM CRUD
+═══════════════════════════════════════════ */
+function submitForm(){
+  var date   =document.getElementById('f-date').value.trim();
+  var amount =parseFloat(document.getElementById('f-amount').value);
+  var from   =document.getElementById('f-from').value;
+  var purpose=document.getElementById('f-purpose').value;
+  var branch =document.getElementById('f-branch').value;
+  var notes  =document.getElementById('f-notes').value.trim();
+
+  if(!date||!from)             return toast('Date and Company are required.','err');
+  if(!purpose)                 return toast('Please select a category.','err');
+  if(!branch)                  return toast('Please select a branch.','err');
+  if(isNaN(amount)||amount<=0) return toast('Enter a valid positive amount.','err');
+
+  if(editId!==null){
+    receipts=receipts.map(function(r){
+      return r.id===editId?{id:r.id,date:date,amount:amount,from:from,purpose:purpose,branch:branch,notes:notes}:r;
+    });
+    cancelEdit(); toast('Receipt updated.');
+  } else {
+    receipts.push({id:nextId++,date:date,amount:amount,from:from,purpose:purpose,branch:branch,notes:notes});
+    clearForm(); toast('Receipt added.');
+  }
+  scheduleAutoSave();
+}
+function clearForm(){
+  ['f-date','f-amount','f-from','f-purpose','f-branch','f-notes'].forEach(function(id){document.getElementById(id).value='';});
+}
+function startEdit(id){
+  var r=receipts.find(function(x){return x.id===id;});
+  if(!r) return;
+  editId=id;
+  document.getElementById('f-date').value   =r.date;
+  document.getElementById('f-amount').value =r.amount;
+  document.getElementById('f-from').value   =r.from;
+  document.getElementById('f-purpose').value=r.purpose;
+  document.getElementById('f-branch').value =r.branch||'';
+  document.getElementById('f-notes').value  =r.notes||'';
+  document.getElementById('form-title').textContent  ='✏️ Edit Receipt';
+  document.getElementById('submit-btn').textContent  ='Update Receipt';
+  document.getElementById('cancel-btn').style.display='inline-block';
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.tab')[0].classList.add('active');
+  document.getElementById('panel-receipts').classList.add('active');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function cancelEdit(){
+  editId=null; clearForm();
+  document.getElementById('form-title').textContent  ='➕ Add Receipt';
+  document.getElementById('submit-btn').textContent  ='Add Receipt';
+  document.getElementById('cancel-btn').style.display='none';
+}
+function delReceipt(id){
+  if(!confirm('Delete this receipt?')) return;
+  receipts=receipts.filter(function(r){return r.id!==id;});
+  scheduleAutoSave(); toast('Receipt deleted.');
+}
+
+/* ═══════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════ */
+renderTable();
+</script>
+</body>
+</html>
