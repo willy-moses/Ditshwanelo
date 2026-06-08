@@ -58,11 +58,17 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
 
 /* ── SIDEBAR ── */
 .sidebar{
-  width:var(--sidebar-w);background:var(--navy);
-  display:flex;flex-direction:column;
-  position:fixed;top:0;left:0;bottom:0;z-index:200;
+  width:var(--sidebar-w);
+  background:var(--navy);
+  display:flex;
+  flex-direction:column;
+  position:fixed;
+  top:0;left:0;bottom:0;
+  z-index:400;
   transition:transform .28s cubic-bezier(.4,0,.2,1);
   will-change:transform;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
 }
 .sidebar-brand{padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
 .sidebar-brand .logo-icon{width:64px;height:64px;background:transparent;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
@@ -77,7 +83,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
 .user-chip .logout-btn:hover{color:var(--gold-light)}
 .sidebar-nav{padding:10px 8px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .nav-section-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.3);padding:8px 10px 4px;margin-top:4px}
-.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,.6);font-size:13px;transition:all .18s;margin-bottom:1px;-webkit-tap-highlight-color:transparent}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,.6);font-size:13px;transition:all .18s;margin-bottom:1px;-webkit-tap-highlight-color:transparent;user-select:none}
 .nav-item:hover,.nav-item:active{background:rgba(255,255,255,.08);color:var(--white)}
 .nav-item.active{background:rgba(200,146,58,.18);color:var(--gold-light);font-weight:500}
 .nav-item .nav-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
@@ -85,9 +91,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
 
 /* ── SIDEBAR OVERLAY (mobile) ── */
 #sidebar-overlay{
-  display:none;position:fixed;inset:0;
-  background:rgba(0,0,0,.5);z-index:199;
-  backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.55);
+  z-index:399;
+  backdrop-filter:blur(2px);
+  -webkit-backdrop-filter:blur(2px);
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
 }
 #sidebar-overlay.show{display:block}
 
@@ -101,12 +113,29 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
   display:flex;align-items:center;justify-content:space-between;
   position:sticky;top:0;z-index:50;gap:8px;
 }
-.topbar-left{display:flex;align-items:center;gap:10px;min-width:0}
+.topbar-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+
+/* ── HAMBURGER ── */
 #menu-btn{
-  display:none;background:none;border:none;cursor:pointer;
-  padding:6px;border-radius:8px;color:var(--navy);font-size:22px;
-  line-height:1;flex-shrink:0;-webkit-tap-highlight-color:transparent;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  background:none;
+  border:none;
+  cursor:pointer;
+  padding:6px 8px;
+  border-radius:8px;
+  color:var(--navy);
+  font-size:22px;
+  line-height:1;
+  flex-shrink:0;
+  -webkit-tap-highlight-color:transparent;
+  user-select:none;
+  min-width:36px;
+  min-height:36px;
 }
+#menu-btn:active{background:var(--cream)}
+
 .topbar-title{font-family:'DM Serif Display',serif;font-size:18px;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topbar-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}
 
@@ -180,7 +209,7 @@ select,input[type=text],input[type=date],input[type=email],input[type=password]{
 select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:focus,input[type=password]:focus{border-color:var(--navy);background:var(--white)}
 
 /* ── MODAL ── */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(10,25,45,.55);z-index:300;align-items:center;justify-content:center;backdrop-filter:blur(3px);padding:16px}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(10,25,45,.55);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(3px);padding:16px}
 .modal-overlay.open{display:flex}
 .modal{background:var(--white);border-radius:var(--radius-lg);width:100%;max-width:680px;max-height:calc(100vh - 32px);overflow-y:auto;-webkit-overflow-scrolling:touch;animation:slideUp .25s ease;box-shadow:var(--shadow-lg)}
 .modal-head{padding:18px 22px 14px;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;justify-content:space-between;position:sticky;top:0;background:var(--white);z-index:1}
@@ -301,88 +330,76 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
 .scursor{display:inline-block;width:2px;height:1em;background:var(--navy);margin-left:2px;vertical-align:text-bottom;animation:blink .9s infinite}
 
 /* ════════════════════════════════════════
-   RESPONSIVE BREAKPOINTS
+   RESPONSIVE
    ════════════════════════════════════════ */
 
-/* ── TABLET (≤ 1024px) ── */
+/* TABLET */
 @media(max-width:1024px){
   .stats-grid{grid-template-columns:repeat(2,1fr)}
   .topbar{padding:0 16px}
   .content{padding:16px}
 }
 
-/* ── MOBILE (≤ 768px) ── */
+/* MOBILE */
 @media(max-width:768px){
   :root{--sidebar-w:260px}
 
-  /* Sidebar hidden off-screen, slides in */
-  .sidebar{transform:translateX(-100%)}
-  .sidebar.open{transform:translateX(0)}
+  /* Sidebar off-screen by default, slides in when .open */
+  .sidebar{
+    transform:translateX(-100%);
+    box-shadow:none;
+  }
+  .sidebar.open{
+    transform:translateX(0);
+    box-shadow:var(--shadow-lg);
+  }
 
   /* Main takes full width */
   .main{margin-left:0}
 
   /* Show hamburger */
-  #menu-btn{display:flex}
+  #menu-btn{display:flex !important}
 
-  /* Topbar adjustments */
   .topbar{padding:0 12px;gap:6px}
   .topbar-title{font-size:15px}
-
-  /* Hide less critical topbar buttons on small screens */
   .topbar-actions .btn-outline{display:none}
 
-  /* Status bars */
   .db-status-bar,.offline-banner{padding:6px 14px;font-size:11px}
-
-  /* Content */
   .content{padding:12px}
 
-  /* Stats: 2 columns on mobile */
   .stats-grid{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
   .stat-val{font-size:26px}
 
-  /* Tables: allow horizontal scroll */
   .table-wrap{-webkit-overflow-scrolling:touch}
   table{min-width:600px}
 
-  /* Form grids: single column */
   .form-grid{grid-template-columns:1fr}
   .field.full{grid-column:1}
   .detail-grid{grid-template-columns:1fr}
   .detail-field.full{grid-column:1}
 
-  /* Toolbar wraps */
   .toolbar{padding:8px 10px;gap:6px}
   .search-wrap{min-width:100%;order:-1}
 
-  /* Village grid: 2 columns */
   .village-grid{grid-template-columns:repeat(2,1fr);gap:8px}
 
-  /* Connect banner */
   .connect-banner{padding:14px 16px}
   .connect-banner .btn{width:100%;justify-content:center}
 
-  /* AI tabs wrap */
   .ai-tabs2{gap:3px}
   .ai-tab2{min-width:70px;font-size:11px;padding:7px 8px}
 
-  /* Modal full-screen on mobile */
   .modal-overlay{padding:8px}
   .modal{max-height:calc(100vh - 16px);border-radius:14px}
   .modal-head{padding:14px 16px 12px}
   .modal-body{padding:14px 16px}
-  .modal-foot{padding:10px 16px 14px}
-
-  /* Buttons in modal foot stack */
-  .modal-foot{flex-direction:column-reverse}
+  .modal-foot{padding:10px 16px 14px;flex-direction:column-reverse}
   .modal-foot .btn{width:100%;justify-content:center}
 
-  /* AI case grid */
   .csg{grid-template-columns:1fr}
 }
 
-/* ── SMALL MOBILE (≤ 400px) ── */
+/* SMALL MOBILE */
 @media(max-width:400px){
   .stats-grid{grid-template-columns:1fr 1fr;gap:8px}
   .stat-card{padding:12px 14px}
@@ -392,7 +409,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
   .qchip{font-size:11px;padding:5px 10px}
 }
 
-/* ── LARGE SCREENS (≥ 1280px) ── */
+/* LARGE SCREENS */
 @media(min-width:1280px){
   .stats-grid{grid-template-columns:repeat(4,1fr);gap:16px}
   .content{padding:24px 28px}
@@ -536,7 +553,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
   <div id="auth-loading"></div>
 </div>
 
-<!-- ── SIDEBAR OVERLAY (mobile tap-to-close) ── -->
+<!-- ── SIDEBAR OVERLAY — tap outside to close ── -->
 <div id="sidebar-overlay" onclick="closeSidebar()"></div>
 
 <!-- ── MAIN APP ── -->
@@ -578,6 +595,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
   <div class="main">
     <div class="topbar">
       <div class="topbar-left">
+        <!-- HAMBURGER — visible on mobile only via CSS -->
         <button id="menu-btn" onclick="toggleSidebar()" aria-label="Toggle menu">☰</button>
         <span class="topbar-title" id="page-title">Dashboard</span>
       </div>
@@ -975,7 +993,10 @@ create policy "Auth users full access on audit_log" on audit_log for all to auth
 
 <div class="toast-container" id="toasts"></div>
 
-<!-- Scripts at bottom so DOM is ready -->
+<!-- ══════════════════════════════════════
+     SCRIPTS — must be at bottom of body
+     so all DOM elements exist first
+     ══════════════════════════════════════ -->
 <script src="logo.js"></script>
 <script src="app.js"></script>
 <script>
@@ -985,38 +1006,43 @@ create policy "Auth users full access on audit_log" on audit_log for all to auth
     document.getElementById('logo-sidebar').src = LOGO_BASE64;
   }
 
-  /* ── Sidebar toggle (mobile) ── */
+  /* ══════════════════════════════════════
+     SIDEBAR TOGGLE — defined HERE in HTML
+     so it is always available regardless
+     of what app.js does or doesn't define
+     ══════════════════════════════════════ */
   function toggleSidebar(){
     const sb  = document.getElementById('sidebar');
     const ov  = document.getElementById('sidebar-overlay');
-    const open = sb.classList.toggle('open');
-    ov.classList.toggle('show', open);
-    document.body.style.overflow = open ? 'hidden' : '';
+    const isOpen = sb.classList.toggle('open');
+    ov.classList.toggle('show', isOpen);
+    document.body.style.overflow = isOpen ? 'hidden' : '';
   }
+
   function closeSidebar(){
     document.getElementById('sidebar').classList.remove('open');
     document.getElementById('sidebar-overlay').classList.remove('show');
     document.body.style.overflow = '';
   }
 
-  /* Auto-close sidebar when nav item tapped on mobile */
-  document.querySelectorAll('.nav-item').forEach(item => {
-    item.addEventListener('click', () => {
+  /* Auto-close sidebar when any nav item is tapped on mobile */
+  document.querySelectorAll('.nav-item').forEach(function(item){
+    item.addEventListener('click', function(){
       if(window.innerWidth <= 768) closeSidebar();
     });
   });
 
-  /* Close sidebar on resize to desktop */
-  window.addEventListener('resize', () => {
+  /* Close sidebar when screen grows to desktop size */
+  window.addEventListener('resize', function(){
     if(window.innerWidth > 768) closeSidebar();
   });
 
   /* ── Service Worker ── */
   if('serviceWorker' in navigator){
-    window.addEventListener('load', () => {
+    window.addEventListener('load', function(){
       navigator.serviceWorker.register('/sw.js')
-        .then(() => console.log('SW registered'))
-        .catch(e => console.log('SW error:', e));
+        .then(function(){ console.log('SW registered'); })
+        .catch(function(e){ console.log('SW error:', e); });
     });
   }
 </script>
