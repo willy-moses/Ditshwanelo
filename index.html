@@ -820,6 +820,18 @@ create policy "Auth users full access on audit_log" on audit_log for all to auth
           <div class="field"><label>Case Status</label>
             <select id="f-status"><option>Ongoing</option><option>Pending</option><option>Closed</option></select>
           </div>
+          <div class="field"><label>Date of Case</label><input type="date" id="f-case-date"></div>
+<div class="field"><label>Employment Status</label>
+  <select id="f-employ-status">
+    <option value="">— Select —</option>
+    <option>Employed</option>
+    <option>Self-Employed</option>
+    <option>Unemployed</option>
+    <option>Student</option>
+    <option>Retired</option>
+    <option>Other</option>
+  </select>
+</div>
           <div class="field full"><label>Brief Description</label><textarea id="f-desc" placeholder="Describe the nature of the case..."></textarea></div>
           <div class="field full"><label>Assistance Given</label><textarea id="f-assist" placeholder="What assistance or advice was provided..."></textarea></div>
         </div>

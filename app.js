@@ -570,12 +570,11 @@ function renderRecent() {
   const empty  = document.getElementById('recent-empty');
   tbody.innerHTML = '';
   empty.style.display = cases.length === 0 ? 'block' : 'none';
-  recent.forEach(c => {
+  recent.forEach((c, localIdx) => {
     const idx = cases.indexOf(c);
     tbody.insertAdjacentHTML('beforeend', `<tr>
       <td><span class="case-num">${esc(c.num)}</span></td>
       <td class="name-cell">${esc(c.name)}</td>
-      <td>${esc(c.idNumber) || '—'}</td>
       <td>${esc(c.village)  || '—'}</td>
       <td>${esc(c.type)}</td>
       <td><span class="badge badge-${c.status.toLowerCase()}">${c.status}</span></td>
@@ -585,7 +584,6 @@ function renderRecent() {
       </div></td></tr>`);
   });
 }
-
 // ══════════════════════════════════════════════
 // RENDER TABLE
 // ══════════════════════════════════════════════
@@ -766,6 +764,8 @@ function openAddModal() {
   document.getElementById('modal-sub').textContent   = 'Fill in the details below';
   ['f-num','f-name','f-idnum','f-tribe','f-village','f-address','f-contacts','f-desc','f-assist'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-dob').value    = '';
+  document.getElementById('f-case-date').value     = '';
+  document.getElementById('f-employ-status').value = '';
   document.getElementById('f-num').value    = autoNum();
   document.getElementById('f-type').value   = 'Labour Dispute';
   document.getElementById('f-status').value = 'Ongoing';
@@ -783,6 +783,8 @@ function editCase(idx) {
   document.getElementById('modal-sub').textContent   = c.num + ' — ' + c.name;
   document.getElementById('f-num').value      = c.num;
   document.getElementById('f-name').value     = c.name;
+  document.getElementById('f-case-date').value      = c.caseDate     || '';
+document.getElementById('f-employ-status').value  = c.employStatus || '';
   document.getElementById('f-idnum').value    = c.idNumber  || '';
   document.getElementById('f-dob').value      = c.dob       || '';
   document.getElementById('f-tribe').value    = c.tribe     || '';
@@ -808,6 +810,8 @@ async function saveCase() {
     name,
     idNumber: document.getElementById('f-idnum').value.trim(),
     dob:      document.getElementById('f-dob').value || null,
+    caseDate:     document.getElementById('f-case-date').value || null,
+employStatus: document.getElementById('f-employ-status').value.trim(),
     tribe:    document.getElementById('f-tribe').value.trim(),
     village:  document.getElementById('f-village').value.trim(),
     address:  document.getElementById('f-address').value.trim(),
@@ -871,6 +875,8 @@ function viewCase(idx) {
     { l:'ID Number',             v: c.idNumber },
     { l:'Date of Birth',         v: c.dob },
     { l:'Tribe',                 v: c.tribe },
+    { l:'Date of Case',       v: c.caseDate },
+    { l:'Employment Status',  v: c.employStatus },
     { l:'Contacts',              v: c.contacts },
     { l:'Village / Settlement',  v: c.village },
     { l:'Home Address / Ward',   v: c.address,  full: true },
@@ -1000,6 +1006,8 @@ function caseToRow(c) {
     type:             c.type           || '',
     description:      c.desc           || '',
     assistance:       c.assist         || '',
+    case_date:         c.caseDate     || null,
+   employment_status: c.employStatus || '',
     status:           ['Ongoing','Pending','Closed'].includes(c.status) ? c.status : 'Ongoing',
     contacts:         c.contacts       || '',
     updated_at:       new Date().toISOString(),
@@ -1023,6 +1031,8 @@ function rowToCase(r) {
     type:           r.type            || '',
     desc:           r.description     || '',
     assist:         r.assistance      || '',
+    caseDate:     r.case_date         || '',
+    employStatus: r.employment_status || '',
     status:         r.status          || 'Ongoing',
     contacts:       r.contacts        || '',
     createdAt:      r.created_at,
@@ -1136,8 +1146,8 @@ const EXCEL_HANDLE_KEY = 'legalaid_excel_handle_v3';
 
 function buildWorkbook() {
   const wb  = XLSX.utils.book_new();
-  const hdr = ['Case No.','Full Names','ID Number','Date of Birth','Tribe','Village','Address','Case Type','Description','Assistance','Status','Contacts','Created By','Last Edited By'];
-  const rows = cases.map(c => [c.num,c.name,c.idNumber,c.dob,c.tribe,c.village,c.address,c.type,c.desc,c.assist,c.status,c.contacts,c.createdByName,c.updatedByName]);
+  const hdr = ['Case No.','Full Names','ID Number','Date of Birth','Tribe','Village','Address','Case Type','Description','Date of Case','Employment Status','Assistance','Status','Contacts','Created By','Last Edited By'];
+  const rows = cases.map(c => [c.num,c.name,c.idNumber,c.dob,c.tribe,c.caseDate || '', c.employStatus || '',c.village,c.address,c.type,c.desc,c.assist,c.status,c.contacts,c.createdByName,c.updatedByName]);
   const ws  = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
   ws['!cols'] = [10,26,16,14,14,18,22,18,36,32,12,20,18,18].map(w => ({ wch: w }));
   const ws2 = XLSX.utils.aoa_to_sheet([
@@ -1420,127 +1430,218 @@ async function clearAllData() {
 // PDF EXPORT
 // ══════════════════════════════════════════════
 function exportToPDF() {
-  if (cases.length === 0) { showToast('No cases to export','error'); return; }
-  const { jsPDF } = window.jspdf;
-  const doc  = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-  const NAVY = [15,37,64], GOLD = [200,146,58], WHITE = [255,255,255], CREAM = [250,248,245], MUTED = [90,106,122];
-  const GREEN = [26,122,74], AMBER = [138,92,0], BLUE = [26,74,138];
-  const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
-  const date = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' });
+  // Deduplicate by case number
+  const seen = new Set();
+  const uniqueCases = cases.filter(c => {
+    if (seen.has(c.num)) return false;
+    seen.add(c.num);
+    return true;
+  });
 
-  function drawHeader(title) {
-    doc.setFillColor(...NAVY); doc.rect(0,0,pw,26,'F');
-    doc.setFillColor(...GOLD); doc.rect(0,0,4,26,'F');
-    const logoEl = document.querySelector('.sidebar-brand .logo-icon img');
-    if (logoEl && logoEl.src) { try { doc.addImage(logoEl.src,'PNG',7,3,20,20); } catch(e) {} }
-    doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(...WHITE);
-    doc.text('DITSHWANELO BOTSWANA',32,10);
-    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(200,200,200);
-    doc.text(title,32,17);
-    doc.text('Generated: ' + date + '  ·  By: ' + currentUserName, pw-8, 17, { align:'right' });
+  if (uniqueCases.length === 0) { showToast('No cases to export', 'error'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const pw  = doc.internal.pageSize.getWidth();
+  const ph  = doc.internal.pageSize.getHeight();
+  const MARGIN  = 10;
+  const cardW   = pw - MARGIN * 2;
+
+  const NAVY  = [15, 37, 64];
+  const WHITE = [255, 255, 255];
+  const BLACK = [0, 0, 0];
+  const LIGHT = [240, 240, 240];
+  const CARD_GAP = 5;
+
+  // Fixed row heights (rows 1 & 2)
+  const headerH     = 6;
+  const valueH      = 12;
+  const row2HeaderH = 6;
+  const row2ValueH  = 14;
+  const row3HeaderH = 6;
+  const MIN_ROW3_VALUE_H = 14;
+
+  let y = MARGIN;
+
+  // ── Helpers ──────────────────────────────────────────────
+
+  function getLineCount(text, maxW, fontSize) {
+    if (!text) return 1;
+    doc.setFontSize(fontSize);
+    return doc.splitTextToSize(String(text), maxW - 4).length;
   }
 
-  function drawStatBoxes(y) {
-    const stats = [
-      { l:'Total',   v:cases.length, c:NAVY },
-      { l:'Ongoing', v:cases.filter(c=>c.status==='Ongoing').length, c:BLUE },
-      { l:'Pending', v:cases.filter(c=>c.status==='Pending').length, c:AMBER },
-      { l:'Closed',  v:cases.filter(c=>c.status==='Closed').length,  c:GREEN }
-    ];
-    const bW=42, bH=16, gap=4, sX=(pw-(stats.length*bW+(stats.length-1)*gap))/2;
-    stats.forEach((s,i) => {
-      const bx = sX + i*(bW+gap);
-      doc.setFillColor(...CREAM); doc.roundedRect(bx,y,bW,bH,2,2,'F');
-      doc.setDrawColor(220,220,220); doc.setLineWidth(.3); doc.roundedRect(bx,y,bW,bH,2,2,'S');
-      doc.setFillColor(...s.c); doc.roundedRect(bx,y,bW,1.2,.6,.6,'F');
-      doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(...s.c);
-      doc.text(String(s.v), bx+bW/2, y+9.5, { align:'center' });
-      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...MUTED);
-      doc.text(s.l.toUpperCase(), bx+bW/2, y+14, { align:'center' });
-    });
+  function computeRow3ValueH(c) {
+    const halfW    = cardW / 2;
+    const lineH    = 7 * 0.45;
+    const padding  = 5;
+    const descLines  = getLineCount(c.desc,   halfW, 7);
+    const assistLines = getLineCount(c.assist, halfW, 7);
+    const needed = Math.max(descLines, assistLines) * lineH + padding;
+    return Math.max(MIN_ROW3_VALUE_H, needed);
+  }
+
+  function computeCardHeight(c) {
+    return headerH + valueH + row2HeaderH + row2ValueH + row3HeaderH + computeRow3ValueH(c);
+  }
+
+  function drawPageHeader() {
+    doc.setFillColor(...NAVY);
+    doc.rect(MARGIN, y, cardW, 8, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...WHITE);
+    doc.text('DITSHWANELO BOTSWANA — CASE REGISTER', pw / 2, y + 5.5, { align: 'center' });
+    y += 11;
   }
 
   function drawFooter() {
-    const pc = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pc; i++) {
+    const total = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= total; i++) {
       doc.setPage(i);
-      doc.setFillColor(...NAVY); doc.rect(0,ph-8,pw,8,'F');
-      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...WHITE);
-      doc.text('Ditshwanelo Botswana Case Management  ·  Confidential',8,ph-3);
-      doc.text('Page ' + i + ' of ' + pc, pw-8, ph-3, { align:'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(120, 120, 120);
+      doc.text(
+        'Ditshwanelo Botswana · Confidential · Generated ' + new Date().toLocaleDateString('en-GB'),
+        MARGIN, ph - 4
+      );
+      doc.text('Page ' + i + ' of ' + total, pw - MARGIN, ph - 4, { align: 'right' });
     }
   }
 
-  const scol = s => s==='Ongoing' ? {textColor:BLUE,fillColor:[219,234,254]} : s==='Pending' ? {textColor:AMBER,fillColor:[254,247,230]} : {textColor:GREEN,fillColor:[232,245,238]};
+  function checkNewPage(neededH) {
+    if (y + neededH > ph - 14) {
+      doc.addPage();
+      y = MARGIN;
+      drawPageHeader();
+    }
+  }
 
-  drawHeader('Case Register — Summary Table  ·  Confidential');
-  drawStatBoxes(30);
+  function drawCell(x, cellY, w, h, text, opts = {}) {
+    doc.setDrawColor(...BLACK);
+    doc.setLineWidth(0.3);
 
-  doc.autoTable({
-    startY:50, margin:{ left:6, right:6 },
-    head:[['Case No.','Full Names','ID No.','DOB','Tribe','Village','Address','Contacts','Type','Description','Assistance Given','Status','Officer']],
-    body: cases.map(c => [c.num,c.name,c.idNumber||'—',c.dob||'—',c.tribe||'—',c.village||'—',c.address||'—',c.contacts||'—',c.type,c.desc||'—',c.assist||'—',c.status,c.createdByName||'—']),
-    headStyles:       { fillColor:NAVY, textColor:WHITE, fontStyle:'bold', fontSize:7.5, cellPadding:{ top:3, bottom:3, left:2.5, right:2.5 } },
-    bodyStyles:       { fontSize:7, cellPadding:{ top:2.5, bottom:2.5, left:2.5, right:2.5 }, textColor:[30,30,40], lineColor:[220,227,234], lineWidth:.2 },
-    alternateRowStyles:{ fillColor:[247,249,252] },
-    columnStyles:     { 0:{ fontStyle:'bold', textColor:NAVY }, 9:{ halign:'center' }, 7:{ cellWidth:40 }, 8:{ cellWidth:40 } },
-    didParseCell(d) { if (d.column.index===9 && d.section==='body') { const sc=scol(d.cell.raw); d.cell.styles.textColor=sc.textColor; d.cell.styles.fillColor=sc.fillColor; d.cell.styles.fontStyle='bold'; } },
-    didDrawPage() { drawHeader('Case Register — Summary Table  ·  Confidential'); }
-  });
+    if (opts.header) {
+      doc.setFillColor(...LIGHT);
+      doc.rect(x, cellY, w, h, 'FD');
+    } else {
+      doc.rect(x, cellY, w, h, 'S');
+    }
 
-  const CARD_H=68, CARDS_PER_PAGE=3, MARGIN=8, GAP=5;
-  const cardW = pw - MARGIN*2;
+    if (text === null || text === undefined || text === '') return;
 
-  cases.forEach((c,idx) => {
-    const cardOnPage = idx % CARDS_PER_PAGE;
-    if (cardOnPage === 0) { doc.addPage(); drawHeader('Case Register — Full Details  ·  Confidential'); }
-    const yStart = 32 + cardOnPage*(CARD_H+GAP);
-    const sc     = scol(c.status);
+    const pad      = 2;
+    const fontSize = opts.fontSize || 7;
+    doc.setFont('helvetica', opts.bold || opts.header ? 'bold' : 'normal');
+    doc.setFontSize(fontSize);
+    doc.setTextColor(...BLACK);
 
-    doc.setFillColor(...CREAM); doc.roundedRect(MARGIN,yStart,cardW,CARD_H,2,2,'F');
-    doc.setDrawColor(220,227,234); doc.setLineWidth(.3); doc.roundedRect(MARGIN,yStart,cardW,CARD_H,2,2,'S');
-    doc.setFillColor(...sc.fillColor); doc.roundedRect(MARGIN,yStart,cardW,6,2,2,'F');
-    doc.rect(MARGIN,yStart+3,cardW,3,'F');
+    const maxW      = w - pad * 2;
+    const lines     = doc.splitTextToSize(String(text), maxW);
+    const lineH     = fontSize * 0.45;
+    const totalTextH = lines.length * lineH;
 
-    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...NAVY);
-    doc.text(String(c.num||''), MARGIN+3, yStart+4.5);
-    doc.setFontSize(8.5);
-    doc.text(String(c.name||''), MARGIN+22, yStart+4.5);
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...sc.textColor);
-    doc.text(c.status.toUpperCase(), pw-MARGIN-3, yStart+4.5, { align:'right' });
+    // Top-align text in tall cells, centre in short ones
+    const textY = h > 16
+      ? cellY + pad + lineH
+      : cellY + (h - totalTextH) / 2 + lineH * 0.85;
 
-    const fields = [
-      ['ID Number',    c.idNumber||'—'], ['Date of Birth', c.dob||'—'],
-      ['Tribe',        c.tribe||'—'],    ['Village',       c.village||'—'],
-      ['Address',      c.address||'—'],  ['Contacts',      c.contacts||'—'],
-      ['Case Type',    c.type||'—'],     ['Officer',       c.createdByName||'—'],
+    doc.text(lines, x + pad, textY);
+  }
+
+  // ── Draw one case card ────────────────────────────────────
+
+  function drawCaseCard(c, startY) {
+    let cx;
+    const row3ValueH = computeRow3ValueH(c);
+
+    // ── ROW 1: headers ──
+    const cols1 = (() => {
+      const raw   = [22, 36, 22, 20, 22, 28, 28, 22];
+      const total = raw.reduce((a, b) => a + b, 0);
+      const scale = cardW / total;
+      return raw.map(w => parseFloat((w * scale).toFixed(2)));
+    })();
+
+    const headers1 = ['CASE NO.', 'FULL NAMES', 'ID NO.', 'DOB', 'DATE OF CASE', 'VILLAGE', 'TYPE', 'STATUS'];
+    const vals1    = [
+      c.num       || '',
+      c.name      || '',
+      c.idNumber  || '',
+      c.dob       || '',
+      c.caseDate  || '',
+      c.village   || '',
+      c.type      || '',
+      c.status    || ''
     ];
-    const xL = MARGIN+3, xR = MARGIN+cardW/2+2;
-    let yF = yStart+10;
-    fields.forEach(([label,val],fi) => {
-      const x = fi%2===0 ? xL : xR;
-      if (fi%2===0 && fi>0) yF += 8;
-      doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(...MUTED);
-      doc.text(label.toUpperCase(), x, yF);
-      doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(30,30,40);
-      doc.text(String(val).substring(0,42), x, yF+4);
+
+    cx = MARGIN;
+    headers1.forEach((h, i) => {
+      drawCell(cx, startY, cols1[i], headerH, h, { header: true, fontSize: 6 });
+      cx += cols1[i];
     });
-    yF += 10;
+    cx = MARGIN;
+    vals1.forEach((v, i) => {
+      drawCell(cx, startY + headerH, cols1[i], valueH, v, { bold: i === 0, fontSize: 7 });
+      cx += cols1[i];
+    });
 
-    doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(...MUTED);
-    doc.text('DESCRIPTION', xL, yF);
-    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(30,30,40);
-    doc.text(doc.splitTextToSize(c.desc||'—', cardW-6).slice(0,2), xL, yF+4);
+    // ── ROW 2: headers ──
+    const cols2 = (() => {
+      const raw   = [28, 32, 30, 50, 50];
+      const total = raw.reduce((a, b) => a + b, 0);
+      const scale = cardW / total;
+      return raw.map(w => parseFloat((w * scale).toFixed(2)));
+    })();
 
-    doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(...MUTED);
-    doc.text('ASSISTANCE GIVEN', xR, yF);
-    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(30,30,40);
-    doc.text(doc.splitTextToSize(c.assist||'—', cardW/2-4).slice(0,2), xR, yF+4);
+    const row2Y    = startY + headerH + valueH;
+    const headers2 = ['TRIBE', 'EMPLOYMENT STATUS', 'CONTACTS', 'ADDRESS', 'OFFICER'];
+    const vals2    = [
+      c.tribe         || '',
+      c.employStatus  || '',
+      c.contacts      || '',
+      c.address       || '',
+      c.createdByName || ''
+    ];
+
+    cx = MARGIN;
+    headers2.forEach((h, i) => {
+      drawCell(cx, row2Y, cols2[i], row2HeaderH, h, { header: true, fontSize: 6 });
+      cx += cols2[i];
+    });
+    cx = MARGIN;
+    vals2.forEach((v, i) => {
+      drawCell(cx, row2Y + row2HeaderH, cols2[i], row2ValueH, v, { fontSize: 7 });
+      cx += cols2[i];
+    });
+
+    // ── ROW 3: Description & Assistance Given (dynamic height) ──
+    const row3Y  = row2Y + row2HeaderH + row2ValueH;
+    const halfW  = cardW / 2;
+
+    drawCell(MARGIN,         row3Y, halfW, row3HeaderH, 'DESCRIPTION',     { header: true, fontSize: 6 });
+    drawCell(MARGIN + halfW, row3Y, halfW, row3HeaderH, 'ASSISTANCE GIVEN', { header: true, fontSize: 6 });
+
+    drawCell(MARGIN,         row3Y + row3HeaderH, halfW, row3ValueH, c.desc   || '', { fontSize: 7 });
+    drawCell(MARGIN + halfW, row3Y + row3HeaderH, halfW, row3ValueH, c.assist || '', { fontSize: 7 });
+  }
+
+  // ── Build PDF ─────────────────────────────────────────────
+
+  drawPageHeader();
+
+  uniqueCases.forEach(c => {
+    const cardH = computeCardHeight(c);
+    checkNewPage(cardH + CARD_GAP);
+    drawCaseCard(c, y);
+    y += cardH + CARD_GAP;
   });
 
   drawFooter();
-  doc.save('case_register_full_' + new Date().toISOString().slice(0,10) + '.pdf');
-  showToast('Full PDF exported','success');
+  doc.save('case_register_' + new Date().toISOString().slice(0, 10) + '.pdf');
+  showToast('PDF exported', 'success');
 }
 
 // ══════════════════════════════════════════════
