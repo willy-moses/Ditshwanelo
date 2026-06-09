@@ -15,405 +15,137 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="styles.css">
+
 <style>
-/* ── RESET & ROOT ── */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --navy:#0f2540;--navy-mid:#1a3a5c;--gold:#c8923a;--gold-light:#e8b060;
-  --gold-pale:#fdf3e3;--cream:#faf8f5;--white:#fff;
-  --text:#1a1a2e;--text-muted:#5a6a7a;--text-light:#8a9aaa;
-  --border:#dde3ea;--border-light:#eef1f5;
-  --success:#1a7a4a;--success-bg:#e8f5ee;
-  --warn:#8a5c00;--warn-bg:#fef7e6;
-  --danger:#8a1a1a;--danger-bg:#fde8e8;
-  --info:#1a4a8a;--info-bg:#dbeafe;
-  --shadow:0 2px 12px rgba(15,37,64,.08);--shadow-lg:0 8px 40px rgba(15,37,64,.14);
-  --radius:10px;--radius-lg:16px;
-  --sidebar-w:240px;
-  --topbar-h:58px;
+/* ══════════════════════════════════════
+   RECEIPT VAULT — inline styles
+   ══════════════════════════════════════ */
+
+/* GRAND TOTAL BADGE */
+.rv-total-badge{
+  background:var(--navy);color:#fff;
+  border-radius:var(--radius);padding:8px 16px;
+  text-align:right;display:inline-block;
 }
-html{-webkit-text-size-adjust:100%}
-body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);min-height:100vh;font-size:14px;line-height:1.6;overflow-x:hidden}
+.rv-total-label{font-size:10px;color:rgba(255,255,255,.5);letter-spacing:1.2px;text-transform:uppercase;display:block}
+.rv-total-amt{font-family:'DM Serif Display',serif;font-size:20px;color:#e8b060}
 
-/* ── AUTH SCREEN ── */
-#auth-screen{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:9000;flex-direction:column;gap:0;padding:16px}
-#auth-screen.hidden{display:none}
-.auth-box{background:var(--white);border-radius:var(--radius-lg);padding:32px 28px;width:100%;max-width:420px;box-shadow:var(--shadow-lg);animation:slideUp .3s ease;overflow-y:auto;max-height:calc(100vh - 32px)}
-.auth-logo{text-align:center;margin-bottom:20px}
-.auth-logo h1{font-family:'DM Serif Display',serif;font-size:20px;color:var(--navy)}
-.auth-logo p{font-size:12px;color:var(--text-muted);margin-top:3px}
-.auth-tabs{display:flex;border-bottom:1.5px solid var(--border);margin-bottom:18px}
-.auth-tab{flex:1;padding:9px;text-align:center;font-size:13px;font-weight:500;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1.5px;transition:all .18s}
-.auth-tab.active{color:var(--navy);border-bottom-color:var(--navy)}
-.auth-form{display:flex;flex-direction:column;gap:12px}
-.auth-form input{font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;color:var(--text);background:var(--cream);outline:none;transition:border-color .18s;width:100%}
-.auth-form input:focus{border-color:var(--navy);background:var(--white)}
-.auth-form label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:-6px}
-.auth-error{font-size:12.5px;color:var(--danger);background:var(--danger-bg);padding:8px 12px;border-radius:8px;display:none}
-.auth-error.show{display:block}
-#auth-loading{color:rgba(255,255,255,.5);font-size:13px;margin-top:16px}
+/* SAVE STATUS */
+.rv-save-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)}
+.rv-dot{width:8px;height:8px;border-radius:50%;background:var(--text-light);flex-shrink:0;transition:background .3s}
+.rv-dot.linked{background:var(--success)}
+.rv-dot.saving{background:var(--gold);animation:rvblink .5s infinite alternate}
+.rv-dot.saved{background:var(--success)}
+.rv-dot.error{background:var(--danger)}
+@keyframes rvblink{to{opacity:.3}}
 
-/* ── LAYOUT ── */
-.layout{display:flex;min-height:100vh}
-
-/* ── SIDEBAR ── */
-.sidebar{
-  width:var(--sidebar-w);
-  background:var(--navy);
-  display:flex;
-  flex-direction:column;
-  position:fixed;
-  top:0;left:0;bottom:0;
-  z-index:400;
-  transition:transform .28s cubic-bezier(.4,0,.2,1);
-  will-change:transform;
-  overflow-y:auto;
-  -webkit-overflow-scrolling:touch;
+/* TABS */
+.rv-tabs{
+  display:flex;gap:4px;background:var(--white);
+  border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:5px;margin-bottom:16px;flex-wrap:wrap;
 }
-.sidebar-brand{padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
-.sidebar-brand .logo-icon{width:64px;height:64px;background:transparent;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
-.sidebar-brand h1{font-family:'DM Serif Display',serif;font-size:13px;color:var(--white);line-height:1.3}
-.sidebar-brand p{font-size:10px;color:rgba(255,255,255,.4);margin-top:2px;letter-spacing:.04em;text-transform:uppercase}
-.user-chip{margin:10px 14px 0;background:rgba(255,255,255,.07);border-radius:8px;padding:7px 10px;display:flex;align-items:center;gap:8px}
-.user-chip .avatar{width:26px;height:26px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--white);flex-shrink:0}
-.user-chip .info{flex:1;overflow:hidden}
-.user-chip .uname{font-size:12px;font-weight:500;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.user-chip .urole{font-size:10px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.04em}
-.user-chip .logout-btn{font-size:14px;cursor:pointer;color:rgba(255,255,255,.35);transition:color .15s;background:none;border:none;padding:0;line-height:1}
-.user-chip .logout-btn:hover{color:var(--gold-light)}
-.sidebar-nav{padding:10px 8px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.nav-section-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.3);padding:8px 10px 4px;margin-top:4px}
-.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,.6);font-size:13px;transition:all .18s;margin-bottom:1px;-webkit-tap-highlight-color:transparent;user-select:none}
-.nav-item:hover,.nav-item:active{background:rgba(255,255,255,.08);color:var(--white)}
-.nav-item.active{background:rgba(200,146,58,.18);color:var(--gold-light);font-weight:500}
-.nav-item .nav-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
-.sidebar-footer{padding:10px 18px;border-top:1px solid rgba(255,255,255,.08);font-size:10px;color:rgba(255,255,255,.25)}
-
-/* ── SIDEBAR OVERLAY (mobile) ── */
-#sidebar-overlay{
-  display:none;
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,.55);
-  z-index:399;
-  backdrop-filter:blur(2px);
-  -webkit-backdrop-filter:blur(2px);
-  cursor:pointer;
-  -webkit-tap-highlight-color:transparent;
+.rv-tab{
+  flex:1;min-width:90px;padding:8px 10px;border-radius:9px;border:none;
+  font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;
+  cursor:pointer;color:var(--text-muted);background:transparent;transition:all .18s;
 }
-#sidebar-overlay.show{display:block}
+.rv-tab:hover{background:var(--cream);color:var(--text)}
+.rv-tab.active{background:var(--navy);color:#fff}
 
-/* ── MAIN ── */
-.main{margin-left:var(--sidebar-w);flex:1;display:flex;flex-direction:column;min-width:0}
+/* PANELS */
+.rv-panel{display:none}.rv-panel.active{display:block}
 
-/* ── TOPBAR ── */
-.topbar{
-  background:var(--white);border-bottom:1px solid var(--border);
-  padding:0 20px;height:var(--topbar-h);
+/* SETUP BANNER */
+.rv-setup-banner{
+  background:linear-gradient(135deg,var(--navy) 0%,var(--navy-mid,#1a3a5c) 100%);
+  border-radius:var(--radius-lg);padding:22px 26px;margin-bottom:18px;
+  display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;
+}
+.rv-setup-icon{font-size:40px;flex-shrink:0}
+.rv-setup-text h3{font-family:'DM Serif Display',serif;font-size:18px;color:#fff;margin-bottom:6px}
+.rv-setup-text p{font-size:13px;color:rgba(255,255,255,.6);line-height:1.6;max-width:500px}
+.rv-setup-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.rv-step-list{list-style:none;margin-top:8px;display:flex;flex-direction:column;gap:5px}
+.rv-step-list li{font-size:12px;color:rgba(255,255,255,.5);display:flex;align-items:center;gap:7px}
+.rv-step-list li::before{content:'';width:5px;height:5px;border-radius:50%;background:#c8923a;flex-shrink:0}
+
+/* COMPAT NOTICE */
+.rv-compat-notice{
+  background:var(--warn-bg);border:1px solid #f0d890;
+  border-radius:var(--radius);padding:10px 14px;
+  margin-bottom:14px;font-size:12px;color:var(--warn);display:none;
+}
+.rv-compat-notice strong{display:block;margin-bottom:3px}
+
+/* FILTER BAR */
+.rv-filter-bar{
+  background:var(--white);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:10px 14px;
+  display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;
+  margin-bottom:14px;
+}
+.rv-filter-bar .field{flex:1;min-width:140px}
+
+/* TABLE CELLS */
+.rv-td-amt{font-family:'DM Serif Display',serif;color:var(--success);font-size:14px;font-weight:600}
+.rv-td-from{font-weight:600;color:var(--navy)}
+.rv-td-notes{color:var(--text-muted);font-size:12px}
+.rv-branch-badge{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;background:var(--info-bg,#dbeafe);color:var(--info,#1a4a8a)}
+
+/* MANAGE LISTS */
+.rv-manage-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.rv-list-box{border:1.5px solid var(--border);border-radius:var(--radius-lg);padding:14px}
+.rv-list-box-title{font-weight:600;font-size:13px;color:var(--navy);margin-bottom:12px}
+.rv-add-row{display:flex;gap:6px;margin-bottom:12px}
+.rv-add-row input{flex:1;font-family:'DM Sans',sans-serif;font-size:13px;padding:7px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);color:var(--text);outline:none}
+.rv-add-row input:focus{border-color:var(--navy);background:var(--white)}
+.rv-list-items{display:flex;flex-direction:column;gap:5px;max-height:240px;overflow-y:auto}
+.rv-list-item{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--cream);border-radius:8px;font-size:13px}
+.rv-list-item span.lname{flex:1;color:var(--text)}
+.rv-list-item-del{background:none;border:none;cursor:pointer;color:var(--danger);font-size:13px;padding:2px 5px;border-radius:5px;transition:background .15s}
+.rv-list-item-del:hover{background:var(--danger-bg)}
+.rv-list-empty{font-size:12px;color:var(--text-muted);text-align:center;padding:14px 0}
+
+/* SUMMARY */
+.rv-sum-section{margin-bottom:24px}
+.rv-sum-heading{font-size:10px;font-weight:600;color:var(--text-light);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.rv-sum-row{display:flex;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid var(--border-light)}
+.rv-sum-left{flex:1}
+.rv-sum-name{font-weight:600;font-size:13px;display:block;margin-bottom:5px}
+.rv-bar-track{background:var(--border-light);border-radius:6px;height:7px;overflow:hidden}
+.rv-bar-fill{height:100%;border-radius:6px;transition:width .5s}
+.rv-sum-right{min-width:100px;text-align:right}
+.rv-s-amt{font-weight:700;color:var(--success);font-family:'DM Serif Display',serif;font-size:14px;display:block}
+.rv-s-pct{font-size:11px;color:var(--text-muted)}
+.rv-grand-row{display:flex;justify-content:space-between;padding-top:16px;font-family:'DM Serif Display',serif;font-size:16px;font-weight:700;border-top:2px solid var(--border);margin-top:4px}
+
+/* RECEIPT PAGE HEADER ROW */
+.rv-page-header{
   display:flex;align-items:center;justify-content:space-between;
-  position:sticky;top:0;z-index:50;gap:8px;
+  flex-wrap:wrap;gap:10px;margin-bottom:18px;
 }
-.topbar-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.rv-header-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
-/* ── HAMBURGER ── */
-#menu-btn{
-  display:none;
-  align-items:center;
-  justify-content:center;
-  background:none;
-  border:none;
-  cursor:pointer;
-  padding:6px 8px;
-  border-radius:8px;
-  color:var(--navy);
-  font-size:22px;
-  line-height:1;
-  flex-shrink:0;
-  -webkit-tap-highlight-color:transparent;
-  user-select:none;
-  min-width:36px;
-  min-height:36px;
-}
-#menu-btn:active{background:var(--cream)}
-
-.topbar-title{font-family:'DM Serif Display',serif;font-size:18px;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.topbar-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}
-
-/* ── STATUS BARS ── */
-.db-status-bar{font-size:12px;padding:6px 20px;border-bottom:1px solid var(--border);background:var(--cream);color:var(--text-muted);min-height:30px;display:flex;align-items:center;gap:8px;transition:background .3s}
-.db-status-bar.success{background:var(--success-bg);color:var(--success)}
-.db-status-bar.warn{background:var(--warn-bg);color:var(--warn)}
-.db-status-bar.error{background:var(--danger-bg);color:var(--danger)}
-.offline-banner{background:#1a1a2e;color:#fff;font-size:12px;padding:6px 20px;display:none;align-items:center;gap:8px}
-.offline-banner.show{display:flex}
-.offline-dot{width:7px;height:7px;border-radius:50%;background:#e24b4a;flex-shrink:0}
-
-/* ── CONTENT ── */
-.content{padding:20px;flex:1}
-
-/* ── BUTTONS ── */
-.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--radius);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .18s;border:1.5px solid transparent;white-space:nowrap;-webkit-tap-highlight-color:transparent}
-.btn-primary{background:var(--navy);color:var(--white);border-color:var(--navy)}
-.btn-primary:hover{background:var(--navy-mid)}
-.btn-gold{background:var(--gold);color:var(--white);border-color:var(--gold)}
-.btn-gold:hover{background:var(--gold-light)}
-.btn-outline{background:transparent;color:var(--text-muted);border-color:var(--border)}
-.btn-outline:hover{border-color:var(--navy);color:var(--navy);background:var(--cream)}
-.btn-danger{background:var(--danger-bg);color:var(--danger);border-color:transparent}
-.btn-danger:hover{background:#f5cccc}
-.btn-success{background:var(--success-bg);color:var(--success);border-color:transparent}
-.btn-sm{padding:5px 10px;font-size:12px}
-
-/* ── PAGES ── */
-.page{display:none}.page.active{display:block}
-
-/* ── STATS GRID ── */
-.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
-.stat-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;position:relative;overflow:hidden;transition:box-shadow .2s}
-.stat-card:hover{box-shadow:var(--shadow)}
-.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--accent,var(--navy))}
-.stat-card.gold::before{--accent:var(--gold)}.stat-card.success::before{--accent:#1a7a4a}.stat-card.warn::before{--accent:#c8923a}.stat-card.info::before{--accent:#185fa5}
-.stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-light);margin-bottom:5px}
-.stat-val{font-family:'DM Serif Display',serif;font-size:30px;color:var(--navy);line-height:1}
-.stat-sub{font-size:11px;color:var(--text-muted);margin-top:3px}
-
-/* ── TABLE CARD ── */
-.table-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)}
-.table-header{padding:12px 16px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
-.table-header h3{font-family:'DM Serif Display',serif;font-size:15px;color:var(--navy)}
-.record-count{font-size:12px;color:var(--text-muted);background:var(--cream);border:1px solid var(--border);padding:3px 10px;border-radius:20px}
-.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{width:100%;border-collapse:collapse;min-width:700px}
-thead th{background:var(--navy);color:rgba(255,255,255,.75);padding:9px 12px;text-align:left;font-size:10.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
-tbody tr{border-bottom:1px solid var(--border-light);transition:background .15s}
-tbody tr:last-child{border-bottom:none}
-tbody tr:hover{background:#f7f9fc}
-tbody td{padding:10px 12px;font-size:12.5px;color:var(--text);vertical-align:middle}
-.case-num{font-weight:600;color:var(--navy);font-size:11.5px;letter-spacing:.04em}
-.name-cell{font-weight:500}
-.badge{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
-.badge::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.6}
-.badge-ongoing{background:var(--info-bg);color:var(--info)}
-.badge-pending{background:var(--warn-bg);color:var(--warn)}
-.badge-closed{background:var(--success-bg);color:var(--success)}
-.empty-state{text-align:center;padding:40px 20px;color:var(--text-muted)}
-.empty-state .empty-icon{font-size:32px;margin-bottom:8px;opacity:.4}
-
-/* ── TOOLBAR ── */
-.toolbar{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
-.search-wrap{position:relative;flex:1;min-width:160px}
-.search-wrap input{width:100%;padding:8px 12px 8px 34px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;background:var(--cream);color:var(--text);transition:border-color .18s;outline:none}
-.search-wrap input:focus{border-color:var(--navy);background:var(--white)}
-.search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-light);font-size:13px}
-select,input[type=text],input[type=date],input[type=email],input[type=password]{font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:8px 12px;background:var(--cream);outline:none;transition:border-color .18s}
-select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:focus,input[type=password]:focus{border-color:var(--navy);background:var(--white)}
-
-/* ── MODAL ── */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(10,25,45,.55);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(3px);padding:16px}
-.modal-overlay.open{display:flex}
-.modal{background:var(--white);border-radius:var(--radius-lg);width:100%;max-width:680px;max-height:calc(100vh - 32px);overflow-y:auto;-webkit-overflow-scrolling:touch;animation:slideUp .25s ease;box-shadow:var(--shadow-lg)}
-.modal-head{padding:18px 22px 14px;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;justify-content:space-between;position:sticky;top:0;background:var(--white);z-index:1}
-.modal-head h2{font-family:'DM Serif Display',serif;font-size:18px;color:var(--navy)}
-.modal-head p{font-size:13px;color:var(--text-muted);margin-top:2px}
-.close-btn{width:28px;height:28px;border-radius:50%;border:none;background:var(--cream);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--text-muted);transition:all .15s;flex-shrink:0}
-.close-btn:hover{background:var(--border);color:var(--text)}
-.modal-body{padding:18px 22px}
-.modal-foot{padding:12px 22px 18px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border-light);flex-wrap:wrap}
-.form-section{margin-bottom:16px}
-.form-section-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-light);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border-light)}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.field{display:flex;flex-direction:column;gap:4px}
-.field.full{grid-column:1/-1}
-.field label{font-size:11px;font-weight:500;color:var(--text-muted);letter-spacing:.03em;text-transform:uppercase}
-.field input,.field select,.field textarea{font-family:'DM Sans',sans-serif;font-size:13px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;color:var(--text);background:var(--cream);outline:none;transition:border-color .18s,background .18s;width:100%}
-.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--navy);background:var(--white);box-shadow:0 0 0 3px rgba(15,37,64,.05)}
-.field textarea{height:70px;resize:vertical}
-
-/* ── VIEW MODAL ── */
-.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.detail-field .dl{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-light);margin-bottom:2px}
-.detail-field .dv{font-size:13px;color:var(--text)}
-.detail-field.full{grid-column:1/-1}
-.detail-field .dv.empty{color:var(--text-light);font-style:italic}
-.audit-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);background:var(--cream);border:1px solid var(--border);padding:3px 10px;border-radius:20px;margin-top:2px}
-
-/* ── SUPABASE ── */
-.sb-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;background:var(--text-light)}
-.sb-dot.connected{background:var(--success);box-shadow:0 0 0 3px var(--success-bg)}
-.sb-dot.connecting{background:var(--gold);animation:pulse 1s infinite}
-.sb-dot.error{background:var(--danger)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.sync-spinner{display:none;width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite;margin-left:6px}
-.sync-spinner.active{display:inline-block}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes slideUp{from{transform:translateY(18px);opacity:0}to{transform:translateY(0);opacity:1}}
-
-/* ── AUDIT LOG ── */
-.audit-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-light)}
-.audit-row:last-child{border-bottom:none}
-.audit-action{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-top:2px}
-.audit-add{background:var(--success-bg);color:var(--success)}
-.audit-edit{background:var(--info-bg);color:var(--info)}
-.audit-delete{background:var(--danger-bg);color:var(--danger)}
-.audit-info{flex:1}
-.audit-main{font-size:13px;color:var(--text);font-weight:500}
-.audit-meta{font-size:11.5px;color:var(--text-muted);margin-top:1px}
-
-/* ── COORDINATOR PANEL ── */
-.village-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent}
-.village-card:hover{box-shadow:var(--shadow);border-color:var(--navy)}
-.village-card.selected{border-color:var(--navy);border-width:2px;background:#f0f4f9}
-.village-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:18px}
-.vc-name{font-weight:600;font-size:13px;color:var(--navy);margin-bottom:5px}
-.vc-stats{display:flex;gap:6px;flex-wrap:wrap}
-.vc-stat{font-size:11px;padding:2px 7px;border-radius:20px}
-.vc-stat.ongoing{background:var(--info-bg);color:var(--info)}
-.vc-stat.pending{background:var(--warn-bg);color:var(--warn)}
-.vc-stat.closed{background:var(--success-bg);color:var(--success)}
-.vc-total{font-size:11px;color:var(--text-muted)}
-
-/* ── CONNECT BANNER ── */
-.connect-banner{background:linear-gradient(135deg,#0f2540 0%,#1a3a5c 100%);border-radius:var(--radius-lg);padding:18px 22px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
-
-/* ── CREDENTIALS ── */
-.credentials-grid{display:grid;grid-template-columns:1fr;gap:10px}
-.credentials-grid input{font-size:12px;color:var(--text);background:var(--cream);border:1.5px solid var(--border);border-radius:8px;padding:8px 12px;width:100%;outline:none;font-family:monospace}
-.credentials-grid input:focus{border-color:var(--navy)}
-
-/* ── TOAST ── */
-.toast-container{position:fixed;bottom:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:7px;max-width:calc(100vw - 32px)}
-.toast{background:var(--navy);color:var(--white);padding:10px 14px;border-radius:10px;font-size:13px;font-weight:500;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:8px;animation:slideUp .25s ease;max-width:320px}
-.toast.success{background:var(--success)}.toast.error{background:var(--danger)}
-
-/* ── PIN ── */
-.pin-btn{font-family:'DM Sans',sans-serif;font-size:20px;font-weight:500;padding:14px;border:1.5px solid var(--border);border-radius:var(--radius-lg);background:var(--white);cursor:pointer;transition:all .15s;color:var(--navy);-webkit-tap-highlight-color:transparent}
-.pin-btn:hover{background:var(--cream);border-color:var(--navy)}
-.pin-btn:active{background:var(--navy);color:var(--white);transform:scale(.96)}
-
-/* ── AI PAGE ── */
-.ai-page-hero{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-mid) 60%,#1a2e4a 100%);border-radius:var(--radius-lg);padding:24px 28px;margin-bottom:18px;position:relative;overflow:hidden}
-.ai-page-hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 80% 50%,rgba(200,146,58,.12) 0%,transparent 60%)}
-.ai-hero-inner2{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.ai-hero-inner2 h2{font-family:'DM Serif Display',serif;font-size:20px;color:#fff;margin-bottom:4px}
-.ai-hero-inner2 p{font-size:13px;color:rgba(255,255,255,.55);max-width:480px;line-height:1.5}
-.ai-tabs2{display:flex;gap:4px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:5px;margin-bottom:16px;flex-wrap:wrap}
-.ai-tab2{flex:1;min-width:90px;padding:8px 10px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;cursor:pointer;color:var(--text-muted);background:transparent;transition:all .18s;-webkit-tap-highlight-color:transparent}
-.ai-tab2:hover{background:var(--cream);color:var(--text)}
-.ai-tab2.active{background:var(--navy);color:#fff}
-.ai-key-row{background:var(--warn-bg);border:1px solid #f0d890;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.ai-key-row label{font-size:12px;font-weight:500;color:var(--warn);white-space:nowrap}
-.ai-key-row input{flex:1;min-width:180px;font-family:monospace;font-size:12px;padding:7px 12px;border:1.5px solid #e8c84a;border-radius:7px;background:#fffdf0;color:var(--text);outline:none}
-.ai-out-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)}
-.ai-out-head{padding:12px 18px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
-.ai-out-head h3{font-family:'DM Serif Display',serif;font-size:15px;color:var(--navy)}
-.ai-out-body{padding:18px 20px;min-height:100px;font-size:13.5px;line-height:1.75;color:var(--text)}
-.ai-out-body p{margin-bottom:10px}.ai-out-body h4{font-family:'DM Serif Display',serif;font-size:15px;color:var(--navy);margin:14px 0 6px}.ai-out-body strong{color:var(--navy)}.ai-out-body ul{padding-left:20px;margin-bottom:10px}.ai-out-body li{margin-bottom:4px}
-.ai-ph{text-align:center;padding:36px 20px;color:var(--text-light)}.ai-ph-icon{font-size:34px;margin-bottom:8px;opacity:.35}.ai-ph p{font-size:13px}
-.ai-run2{background:var(--navy);color:#fff;border:none;border-radius:10px;padding:8px 16px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .18s;display:flex;align-items:center;gap:7px;white-space:nowrap;-webkit-tap-highlight-color:transparent}
-.ai-run2:hover{background:var(--navy-mid)}.ai-run2:disabled{opacity:.5;cursor:not-allowed}
-.ai-run2.loading .lbl{display:none}.ai-run2.loading .ldr{display:flex}
-.ldr{display:none;align-items:center;gap:6px}
-.ai-spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
-.qchips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
-.qchip{padding:6px 12px;border:1.5px solid var(--border);border-radius:20px;font-size:12px;font-weight:500;color:var(--text-muted);cursor:pointer;background:var(--white);transition:all .15s;-webkit-tap-highlight-color:transparent}
-.qchip:hover{border-color:var(--navy);color:var(--navy)}
-.ai-ubar{padding:9px 18px;border-top:1px solid var(--border-light);font-size:11.5px;color:var(--text-light);display:flex;align-items:center;gap:8px}
-.ai-cpybtn{margin-left:auto;background:none;border:1px solid var(--border);border-radius:7px;padding:4px 10px;font-size:11.5px;cursor:pointer;color:var(--text-muted);font-family:'DM Sans',sans-serif;transition:all .15s}
-.ai-cpybtn:hover{border-color:var(--navy);color:var(--navy)}
-.ai-pbar{background:var(--white);border:1.5px solid var(--border);border-radius:var(--radius-lg);padding:12px 16px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px}
-.ai-pbar textarea{flex:1;font-family:'DM Sans',sans-serif;font-size:13px;border:none;outline:none;resize:none;background:transparent;color:var(--text);line-height:1.5;min-height:44px}
-.csg{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:14px;max-height:280px;overflow-y:auto}
-.csc{background:var(--white);border:1.5px solid var(--border);border-radius:var(--radius);padding:11px 13px;cursor:pointer;transition:all .18s;-webkit-tap-highlight-color:transparent}
-.csc:hover{border-color:var(--navy)}.csc.sel{border-color:var(--navy);border-width:2px;background:#f0f4f9}
-.csc-num{font-size:11px;font-weight:600;color:var(--navy);letter-spacing:.05em}.csc-name{font-size:13px;font-weight:500;color:var(--text);margin:2px 0}.csc-meta{font-size:11px;color:var(--text-muted)}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
-.scursor{display:inline-block;width:2px;height:1em;background:var(--navy);margin-left:2px;vertical-align:text-bottom;animation:blink .9s infinite}
-
-/* ════════════════════════════════════════
-   RESPONSIVE
-   ════════════════════════════════════════ */
-
-/* TABLET */
-@media(max-width:1024px){
-  .stats-grid{grid-template-columns:repeat(2,1fr)}
-  .topbar{padding:0 16px}
-  .content{padding:16px}
-}
-
-/* MOBILE */
 @media(max-width:768px){
-  :root{--sidebar-w:260px}
-
-  /* Sidebar off-screen by default, slides in when .open */
-  .sidebar{
-    transform:translateX(-100%);
-    box-shadow:none;
-  }
-  .sidebar.open{
-    transform:translateX(0);
-    box-shadow:var(--shadow-lg);
-  }
-
-  /* Main takes full width */
-  .main{margin-left:0}
-
-  /* Show hamburger */
-  #menu-btn{display:flex !important}
-
-  .topbar{padding:0 12px;gap:6px}
-  .topbar-title{font-size:15px}
-  .topbar-actions .btn-outline{display:none}
-
-  .db-status-bar,.offline-banner{padding:6px 14px;font-size:11px}
-  .content{padding:12px}
-
-  .stats-grid{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
-  .stat-val{font-size:26px}
-
-  .table-wrap{-webkit-overflow-scrolling:touch}
-  table{min-width:600px}
-
-  .form-grid{grid-template-columns:1fr}
-  .field.full{grid-column:1}
-  .detail-grid{grid-template-columns:1fr}
-  .detail-field.full{grid-column:1}
-
-  .toolbar{padding:8px 10px;gap:6px}
-  .search-wrap{min-width:100%;order:-1}
-
-  .village-grid{grid-template-columns:repeat(2,1fr);gap:8px}
-
-  .connect-banner{padding:14px 16px}
-  .connect-banner .btn{width:100%;justify-content:center}
-
-  .ai-tabs2{gap:3px}
-  .ai-tab2{min-width:70px;font-size:11px;padding:7px 8px}
-
-  .modal-overlay{padding:8px}
-  .modal{max-height:calc(100vh - 16px);border-radius:14px}
-  .modal-head{padding:14px 16px 12px}
-  .modal-body{padding:14px 16px}
-  .modal-foot{padding:10px 16px 14px;flex-direction:column-reverse}
-  .modal-foot .btn{width:100%;justify-content:center}
-
-  .csg{grid-template-columns:1fr}
+  .rv-manage-grid{grid-template-columns:1fr}
+  .rv-filter-bar{flex-direction:column;align-items:stretch}
+  .rv-page-header{gap:8px}
+  .rv-total-amt{font-size:17px}
 }
-
-/* SMALL MOBILE */
 @media(max-width:400px){
-  .stats-grid{grid-template-columns:1fr 1fr;gap:8px}
-  .stat-card{padding:12px 14px}
-  .stat-val{font-size:24px}
-  .village-grid{grid-template-columns:1fr}
-  .auth-box{padding:22px 18px}
-  .qchip{font-size:11px;padding:5px 10px}
+  .rv-tabs{gap:2px}
+  .rv-tab{min-width:70px;font-size:11px;padding:7px 6px}
 }
 
-/* LARGE SCREENS */
-@media(min-width:1280px){
-  .stats-grid{grid-template-columns:repeat(4,1fr);gap:16px}
-  .content{padding:24px 28px}
-  .topbar{padding:0 28px}
+@media print{
+  .rv-page-header,.rv-tabs,.rv-filter-bar,.form-actions,.rv-setup-banner,
+  .rv-compat-notice,.rv-add-row,.rv-list-item-del,
+  #rv-panel-receipts,#rv-panel-manage{display:none!important}
+  #rv-panel-summary{display:block!important}
+  body{background:#fff}
+  .table-card{box-shadow:none;border:1px solid #ddd}
 }
 </style>
 </head>
@@ -553,7 +285,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
   <div id="auth-loading"></div>
 </div>
 
-<!-- ── SIDEBAR OVERLAY — tap outside to close ── -->
+<!-- ── SIDEBAR OVERLAY ── -->
 <div id="sidebar-overlay" onclick="closeSidebar()"></div>
 
 <!-- ── MAIN APP ── -->
@@ -583,6 +315,8 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
       <div class="nav-section-label">Records</div>
       <div class="nav-item" onclick="showPage('audit')"><span class="nav-icon">📋</span> Audit Log</div>
       <div class="nav-item" onclick="showPage('ai')"><span class="nav-icon">🤖</span> AI Insights</div>
+      <div class="nav-section-label">Finance</div>
+      <div class="nav-item" onclick="showPage('receipts')"><span class="nav-icon">🧾</span> Receipt Vault</div>
       <div class="nav-section-label">Database</div>
       <div class="nav-item" onclick="showPage('database')"><span class="nav-icon">☁️</span> Supabase &amp; Excel <span class="sb-dot" id="sidebar-sb-dot" style="margin-left:auto"></span></div>
       <div class="nav-item" onclick="exportFallback()"><span class="nav-icon">📥</span> Download Excel</div>
@@ -595,7 +329,6 @@ select:focus,input[type=text]:focus,input[type=date]:focus,input[type=email]:foc
   <div class="main">
     <div class="topbar">
       <div class="topbar-left">
-        <!-- HAMBURGER — visible on mobile only via CSS -->
         <button id="menu-btn" onclick="toggleSidebar()" aria-label="Toggle menu">☰</button>
         <span class="topbar-title" id="page-title">Dashboard</span>
       </div>
@@ -890,6 +623,169 @@ create policy "Auth users full access on audit_log" on audit_log for all to auth
         </div>
       </div>
 
+      <!-- ══ RECEIPT VAULT PAGE ══ -->
+      <div class="page" id="page-receipts">
+
+        <!-- PAGE HEADER -->
+        <div class="rv-page-header">
+          <div>
+            <!-- title intentionally omitted — topbar already shows "Receipt Vault" -->
+          </div>
+          <div class="rv-header-right">
+            <div class="rv-save-status">
+              <span class="rv-dot" id="rv-dot"></span>
+              <span id="rv-save-txt">No file linked</span>
+            </div>
+            <div class="rv-total-badge">
+              <span class="rv-total-label">Grand Total</span>
+              <span class="rv-total-amt" id="rv-header-total">BWP 0.00</span>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="rvOpenExistingFile()">📂 Open File</button>
+            <button class="btn btn-gold btn-sm" onclick="rvCreateNewFile()">✨ New File</button>
+            <input type="file" id="rv-file-input" accept=".xlsx,.xls" onchange="rvLegacyLoad(event)" style="display:none">
+          </div>
+        </div>
+
+        <!-- COMPAT NOTICE -->
+        <div class="rv-compat-notice" id="rv-compat-notice">
+          <strong>⚠️ Auto-save not available in this browser</strong>
+          Use Chrome or Edge for automatic saving. You can still load and manually download below.
+          <br><br><button class="btn btn-outline btn-sm" onclick="document.getElementById('rv-file-input').click()">📂 Load .xlsx (manual)</button>
+        </div>
+
+        <!-- TABS -->
+        <div class="rv-tabs">
+          <button class="rv-tab active" onclick="rvSwitchTab('receipts',this)">📄 Receipts</button>
+          <button class="rv-tab" onclick="rvSwitchTab('summary',this)">📊 Summary</button>
+          <button class="rv-tab" onclick="rvSwitchTab('manage',this)">⚙️ Manage Lists</button>
+        </div>
+
+        <!-- ── RECEIPTS PANEL ── -->
+        <div id="rv-panel-receipts" class="rv-panel active">
+
+          <div class="rv-setup-banner" id="rv-setup-banner">
+            <div class="rv-setup-icon">🗄️</div>
+            <div class="rv-setup-text">
+              <h3>Link your Excel file as the database</h3>
+              <p>Every change saves directly back to your .xlsx file automatically. Re-open the same file after refresh to continue.</p>
+              <ul class="rv-step-list">
+                <li>Open an existing file to continue where you left off</li>
+                <li>Or create a brand-new file to start fresh</li>
+                <li>Every add, edit or delete saves automatically</li>
+              </ul>
+              <div class="rv-setup-actions">
+                <button class="btn btn-gold" onclick="rvOpenExistingFile()">📂 Open Existing File</button>
+                <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="rvCreateNewFile()">✨ Create New File</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ADD / EDIT FORM -->
+          <div class="table-card">
+            <div class="table-header"><h3 id="rv-form-title">➕ Add Receipt</h3></div>
+            <div style="padding:16px">
+              <div class="form-grid">
+                <div class="field"><label>Date *</label><input type="date" id="rv-f-date"></div>
+                <div class="field"><label>Amount (BWP) *</label><input type="number" id="rv-f-amount" min="0" step="0.01" placeholder="0.00"></div>
+                <div class="field"><label>From (Company) *</label><select id="rv-f-from"><option value="">— Select company —</option></select></div>
+                <div class="field"><label>Category *</label><select id="rv-f-purpose"><option value="">— Select category —</option></select></div>
+                <div class="field"><label>Branch *</label><select id="rv-f-branch"><option value="">— Select branch —</option></select></div>
+                <div class="field"><label>Notes (optional)</label><input type="text" id="rv-f-notes" placeholder="Extra details…"></div>
+              </div>
+              <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+                <button class="btn btn-outline" id="rv-cancel-btn" style="display:none" onclick="rvCancelEdit()">Cancel</button>
+                <button class="btn btn-primary" id="rv-submit-btn" onclick="rvSubmitForm()">Add Receipt</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- FILTER BAR -->
+          <div class="rv-filter-bar">
+            <div class="field"><label>🏢 Company</label><select id="rv-fc-company" onchange="rvRenderTable()"><option value="">All companies</option></select></div>
+            <div class="field"><label>🗂️ Category</label><select id="rv-fc-purpose" onchange="rvRenderTable()"><option value="">All categories</option></select></div>
+            <div class="field"><label>🏘️ Branch</label><select id="rv-fc-branch" onchange="rvRenderTable()"><option value="">All branches</option></select></div>
+            <button class="btn btn-outline btn-sm" style="align-self:flex-end" onclick="rvClearFilters()">✕ Clear</button>
+          </div>
+
+          <!-- TABLE -->
+          <div class="table-card">
+            <div class="table-header">
+              <h3 id="rv-table-title">Receipts (0)</h3>
+              <span class="record-count" id="rv-table-count">0</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Date</th><th>From</th><th>Branch</th><th>Category</th><th>Notes</th><th>Amount</th><th></th></tr></thead>
+                <tbody id="rv-tbody"></tbody>
+                <tfoot id="rv-tfoot"></tfoot>
+              </table>
+              <div class="empty-state" id="rv-empty-msg">
+                <div class="empty-icon">🧾</div>
+                <p>No receipts yet. Add companies, categories &amp; branches in <strong>Manage Lists</strong>, then add receipts here.</p>
+              </div>
+            </div>
+          </div>
+        </div><!-- /rv-panel-receipts -->
+
+        <!-- ── SUMMARY PANEL ── -->
+        <div id="rv-panel-summary" class="rv-panel">
+          <div class="table-card">
+            <div class="table-header">
+              <h3>📊 Spending Summary</h3>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <div class="field" style="flex-direction:row;align-items:center;gap:8px;margin:0">
+                  <label style="white-space:nowrap;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em">Branch:</label>
+                  <select id="rv-sum-branch" onchange="rvRenderSummary()" style="padding:6px 28px 6px 10px;font-size:12px">
+                    <option value="">All branches</option>
+                  </select>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="rvExportPDF()">🖨️ Export PDF</button>
+              </div>
+            </div>
+            <div style="padding:16px" id="rv-summary-body">
+              <div class="empty-state"><div class="empty-icon">📊</div><p>No receipts to summarise yet.</p></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── MANAGE LISTS PANEL ── -->
+        <div id="rv-panel-manage" class="rv-panel">
+          <div class="table-card">
+            <div class="table-header"><h3>⚙️ Manage Companies, Categories &amp; Branches</h3></div>
+            <div style="padding:16px">
+              <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Changes save automatically to your linked Excel file.</p>
+              <div class="rv-manage-grid">
+                <div class="rv-list-box">
+                  <div class="rv-list-box-title">🏢 Companies</div>
+                  <div class="rv-add-row">
+                    <input type="text" id="rv-new-company" placeholder="e.g. Shoprite" onkeydown="if(event.key==='Enter')rvAddCompany()">
+                    <button class="btn btn-gold btn-sm" onclick="rvAddCompany()">Add</button>
+                  </div>
+                  <div class="rv-list-items" id="rv-company-list"><div class="rv-list-empty">No companies yet.</div></div>
+                </div>
+                <div class="rv-list-box">
+                  <div class="rv-list-box-title">🗂️ Categories</div>
+                  <div class="rv-add-row">
+                    <input type="text" id="rv-new-category" placeholder="e.g. Fuel" onkeydown="if(event.key==='Enter')rvAddCategory()">
+                    <button class="btn btn-gold btn-sm" onclick="rvAddCategory()">Add</button>
+                  </div>
+                  <div class="rv-list-items" id="rv-category-list"><div class="rv-list-empty">No categories yet.</div></div>
+                </div>
+                <div class="rv-list-box">
+                  <div class="rv-list-box-title">🏘️ Branches</div>
+                  <div class="rv-add-row">
+                    <input type="text" id="rv-new-branch" placeholder="e.g. Gantsi" onkeydown="if(event.key==='Enter')rvAddBranch()">
+                    <button class="btn btn-gold btn-sm" onclick="rvAddBranch()">Add</button>
+                  </div>
+                  <div class="rv-list-items" id="rv-branch-list"><div class="rv-list-empty">No branches yet.</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /page-receipts -->
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /layout -->
@@ -993,58 +889,429 @@ create policy "Auth users full access on audit_log" on audit_log for all to auth
 
 <div class="toast-container" id="toasts"></div>
 
-<!-- ══════════════════════════════════════
-     SCRIPTS — must be at bottom of body
-     so all DOM elements exist first
-     ══════════════════════════════════════ -->
 <script src="logo.js"></script>
 <script src="app.js"></script>
 <script>
-  /* ── Logo injection ── */
-  if(typeof LOGO_BASE64 !== 'undefined'){
-    document.getElementById('logo-auth').src    = LOGO_BASE64;
-    document.getElementById('logo-sidebar').src = LOGO_BASE64;
-  }
+/* ── Logo injection ── */
+if(typeof LOGO_BASE64 !== 'undefined'){
+  document.getElementById('logo-auth').src    = LOGO_BASE64;
+  document.getElementById('logo-sidebar').src = LOGO_BASE64;
+}
 
-  /* ══════════════════════════════════════
-     SIDEBAR TOGGLE — defined HERE in HTML
-     so it is always available regardless
-     of what app.js does or doesn't define
-     ══════════════════════════════════════ */
-  function toggleSidebar(){
-    const sb  = document.getElementById('sidebar');
-    const ov  = document.getElementById('sidebar-overlay');
-    const isOpen = sb.classList.toggle('open');
-    ov.classList.toggle('show', isOpen);
-    document.body.style.overflow = isOpen ? 'hidden' : '';
-  }
+/* ══════════════════════════════════════
+   SIDEBAR TOGGLE
+══════════════════════════════════════ */
+function toggleSidebar(){
+  var sb  = document.getElementById('sidebar');
+  var ov  = document.getElementById('sidebar-overlay');
+  var isOpen = sb.classList.toggle('open');
+  ov.classList.toggle('show', isOpen);
+  document.body.style.overflow = isOpen ? 'hidden' : '';
+}
+function closeSidebar(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('show');
+  document.body.style.overflow = '';
+}
+document.querySelectorAll('.nav-item').forEach(function(item){
+  item.addEventListener('click', function(){ if(window.innerWidth <= 768) closeSidebar(); });
+});
+window.addEventListener('resize', function(){ if(window.innerWidth > 768) closeSidebar(); });
 
-  function closeSidebar(){
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebar-overlay').classList.remove('show');
-    document.body.style.overflow = '';
-  }
-
-  /* Auto-close sidebar when any nav item is tapped on mobile */
-  document.querySelectorAll('.nav-item').forEach(function(item){
-    item.addEventListener('click', function(){
-      if(window.innerWidth <= 768) closeSidebar();
-    });
+/* ── Service Worker ── */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('/sw.js')
+      .then(function(){ console.log('SW registered'); })
+      .catch(function(e){ console.log('SW error:', e); });
   });
+}
 
-  /* Close sidebar when screen grows to desktop size */
-  window.addEventListener('resize', function(){
-    if(window.innerWidth > 768) closeSidebar();
-  });
+/* ══════════════════════════════════════
+   RECEIPT VAULT — all logic inline
+══════════════════════════════════════ */
+var rvReceipts=[],rvCompanies=[],rvCategories=[],rvBranches=[];
+var rvEditId=null,rvNextId=1,rvFileHandle=null,rvAutoSaveTimer=null;
 
-  /* ── Service Worker ── */
-  if('serviceWorker' in navigator){
-    window.addEventListener('load', function(){
-      navigator.serviceWorker.register('/sw.js')
-        .then(function(){ console.log('SW registered'); })
-        .catch(function(e){ console.log('SW error:', e); });
-    });
+var RV_PALETTE=[
+  {bg:'#fef3c7',fg:'#92400e'},{bg:'#d1fae5',fg:'#065f46'},
+  {bg:'#dbeafe',fg:'#1e40af'},{bg:'#ede9fe',fg:'#5b21b6'},
+  {bg:'#fce7f3',fg:'#9d174d'},{bg:'#e0f2fe',fg:'#0369a1'},
+  {bg:'#fee2e2',fg:'#991b1b'},{bg:'#fff7ed',fg:'#c2410c'},
+  {bg:'#f0fdf4',fg:'#166534'},{bg:'#fdf4ff',fg:'#7e22ce'}
+];
+var RV_BAR_COLORS=['#c8923a','#5b8dee','#34c98a','#e05c5c','#a78bfa','#f97316','#14b8a6','#ec4899','#84cc16','#6b7280'];
+var RV_FSAPI=!!window.showOpenFilePicker;
+
+/* show compat notice when receipts page first shown */
+function rvInit(){
+  if(!RV_FSAPI) document.getElementById('rv-compat-notice').style.display='block';
+}
+
+async function rvOpenExistingFile(){
+  if(!RV_FSAPI){document.getElementById('rv-file-input').click();return;}
+  try{
+    var[handle]=await window.showOpenFilePicker({types:[{description:'Excel',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}],multiple:false});
+    rvFileHandle=handle;
+    var file=await handle.getFile();
+    await rvParseWorkbook(file);
+    rvSetLinked(file.name);
+    rvToast('Linked to '+file.name+' ✅');
+  }catch(e){if(e.name!=='AbortError')rvToast('Could not open file.','err');}
+}
+
+async function rvCreateNewFile(){
+  if(!RV_FSAPI){
+    rvReceipts=[];rvCompanies=[];rvCategories=[];rvBranches=[];rvNextId=1;rvFileHandle=null;
+    rvPopulateDropdowns();rvRenderManage();rvRenderTable();
+    rvSetDotState('error','No auto-save (use Chrome/Edge)');
+    document.getElementById('rv-setup-banner').style.display='none';
+    rvToast('Started fresh — in-memory only.','err');return;
   }
+  try{
+    var handle=await window.showSaveFilePicker({suggestedName:'receipts.xlsx',types:[{description:'Excel',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}]});
+    rvFileHandle=handle;
+    rvReceipts=[];rvCompanies=[];rvCategories=[];rvBranches=[];rvNextId=1;
+    rvPopulateDropdowns();rvRenderManage();rvRenderTable();
+    rvSetLinked(handle.name);
+    await rvWriteToDisk();
+    rvToast('Created '+handle.name+' ✅');
+  }catch(e){if(e.name!=='AbortError')rvToast('Could not create file.','err');}
+}
+
+function rvLegacyLoad(e){
+  var file=e.target.files[0];if(!file)return;
+  rvParseWorkbook(file).then(function(){
+    document.getElementById('rv-setup-banner').style.display='none';
+    rvSetDotState('linked','Loaded (manual — no auto-save)');
+    rvToast('Loaded '+file.name);
+  });
+  e.target.value='';
+}
+
+function rvParseWorkbook(file){
+  return new Promise(function(resolve,reject){
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      try{
+        var wb=XLSX.read(ev.target.result,{type:'array'});
+        rvReceipts=[];
+        if(wb.Sheets['Receipts']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Receipts'],{defval:''}).forEach(function(r){
+            if(!r['Date']&&!r['Amount'])return;
+            rvReceipts.push({id:rvNextId++,date:String(r['Date']||''),amount:parseFloat(r['Amount'])||0,from:String(r['From']||''),purpose:String(r['Purpose']||''),branch:String(r['Branch']||''),notes:String(r['Notes']||'')});
+          });
+        }
+        rvCompanies=[];
+        if(wb.Sheets['Companies']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Companies'],{defval:''}).forEach(function(r,i){
+            if(r['Name'])rvCompanies.push({name:String(r['Name']),color:{bg:String(r['ColorBg']||RV_PALETTE[i%RV_PALETTE.length].bg),fg:String(r['ColorFg']||RV_PALETTE[i%RV_PALETTE.length].fg)}});
+          });
+        }
+        rvCategories=[];
+        if(wb.Sheets['Categories']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Categories'],{defval:''}).forEach(function(r,i){
+            if(r['Name'])rvCategories.push({name:String(r['Name']),color:{bg:String(r['ColorBg']||RV_PALETTE[i%RV_PALETTE.length].bg),fg:String(r['ColorFg']||RV_PALETTE[i%RV_PALETTE.length].fg)}});
+          });
+        }
+        rvBranches=[];
+        if(wb.Sheets['Branches']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Branches'],{defval:''}).forEach(function(r){
+            if(r['Name'])rvBranches.push({name:String(r['Name'])});
+          });
+        }
+        rvPopulateDropdowns();rvRenderManage();rvRenderTable();resolve();
+      }catch(err){rvToast('Could not read file.','err');reject(err);}
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function rvBuildWorkbook(){
+  var wb=XLSX.utils.book_new();
+  var rRows=rvReceipts.map(function(r){return{Date:r.date,Amount:r.amount,From:r.from,Purpose:r.purpose,Branch:r.branch||'',Notes:r.notes||''};});
+  var wsR=XLSX.utils.json_to_sheet(rRows.length?rRows:[{Date:'',Amount:'',From:'',Purpose:'',Branch:'',Notes:''}],{header:['Date','Amount','From','Purpose','Branch','Notes']});
+  wsR['!cols']=[{wch:14},{wch:12},{wch:24},{wch:18},{wch:18},{wch:32}];
+  XLSX.utils.book_append_sheet(wb,wsR,'Receipts');
+  var cRows=rvCompanies.map(function(c){return{Name:c.name,ColorBg:c.color.bg,ColorFg:c.color.fg};});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cRows.length?cRows:[{Name:'',ColorBg:'',ColorFg:''}],{header:['Name','ColorBg','ColorFg']}),'Companies');
+  var kRows=rvCategories.map(function(c){return{Name:c.name,ColorBg:c.color.bg,ColorFg:c.color.fg};});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(kRows.length?kRows:[{Name:'',ColorBg:'',ColorFg:''}],{header:['Name','ColorBg','ColorFg']}),'Categories');
+  var bRows=rvBranches.map(function(b){return{Name:b.name};});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(bRows.length?bRows:[{Name:''}],{header:['Name']}),'Branches');
+  return XLSX.write(wb,{bookType:'xlsx',type:'array'});
+}
+
+async function rvWriteToDisk(){
+  if(!rvFileHandle)return;
+  rvSetDotState('saving','Saving…');
+  try{
+    var writable=await rvFileHandle.createWritable();
+    var data=rvBuildWorkbook();
+    await writable.write(new Blob([data],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    await writable.close();
+    var name=rvFileHandle.name;
+    rvSetDotState('saved','✅ Saved · '+name);
+    setTimeout(function(){if(rvFileHandle)rvSetDotState('linked','Linked: '+name);},1800);
+  }catch(e){
+    rvSetDotState('error','⚠️ Save failed');
+    rvToast('Auto-save failed: '+e.message,'err');
+  }
+}
+
+function rvScheduleAutoSave(){
+  rvRenderTable();
+  if(!rvFileHandle)return;
+  if(rvAutoSaveTimer)clearTimeout(rvAutoSaveTimer);
+  rvSetDotState('saving','Saving…');
+  rvAutoSaveTimer=setTimeout(function(){rvWriteToDisk();},900);
+}
+
+function rvSetLinked(name){
+  document.getElementById('rv-setup-banner').style.display='none';
+  rvSetDotState('linked','Linked: '+name);
+}
+function rvSetDotState(state,txt){
+  document.getElementById('rv-dot').className='rv-dot '+state;
+  document.getElementById('rv-save-txt').textContent=txt;
+}
+
+function rvFmt(n){return'BWP '+parseFloat(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
+function rvEsc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function rvToast(msg,type){
+  /* re-use the host app's toast if available, else use inline approach */
+  if(typeof showToast === 'function'){showToast(msg);return;}
+  var t=document.createElement('div');
+  t.textContent=msg;
+  t.style.cssText='position:fixed;bottom:20px;right:20px;padding:10px 18px;border-radius:10px;color:#fff;font-weight:600;font-size:13px;z-index:9999;background:'+(type==='err'?'#8a1a1a':'#1a7a4a');
+  document.body.appendChild(t);
+  setTimeout(function(){t.remove();},3000);
+}
+function rvNextColor(arr){return RV_PALETTE[arr.length%RV_PALETTE.length];}
+
+function rvSwitchTab(name,btn){
+  document.querySelectorAll('.rv-panel').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.rv-tab').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('rv-panel-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='summary')rvRenderSummary();
+}
+
+function rvBadgeForCat(name){
+  for(var i=0;i<rvCategories.length;i++){
+    if(rvCategories[i].name===name){
+      var c=rvCategories[i].color||{bg:'#f3f4f6',fg:'#374151'};
+      return'<span class="badge" style="background:'+c.bg+';color:'+c.fg+'">'+rvEsc(name)+'</span>';
+    }
+  }
+  return'<span class="badge" style="background:var(--border-light);color:var(--text-muted)">'+rvEsc(name||'—')+'</span>';
+}
+
+function rvPopulateDropdowns(){
+  ['rv-f-from','rv-fc-company'].forEach(function(id,i){
+    var sel=document.getElementById(id),cur=sel.value;
+    sel.innerHTML='<option value="">'+(i===0?'— Select company —':'All companies')+'</option>';
+    rvCompanies.forEach(function(item){var o=document.createElement('option');o.value=item.name;o.textContent=item.name;sel.appendChild(o);});
+    if(cur)sel.value=cur;
+  });
+  ['rv-f-purpose','rv-fc-purpose'].forEach(function(id,i){
+    var sel=document.getElementById(id),cur=sel.value;
+    sel.innerHTML='<option value="">'+(i===0?'— Select category —':'All categories')+'</option>';
+    rvCategories.forEach(function(item){var o=document.createElement('option');o.value=item.name;o.textContent=item.name;sel.appendChild(o);});
+    if(cur)sel.value=cur;
+  });
+  ['rv-f-branch','rv-fc-branch','rv-sum-branch'].forEach(function(id,i){
+    var sel=document.getElementById(id),cur=sel.value;
+    sel.innerHTML='<option value="">'+(i===0?'— Select branch —':'All branches')+'</option>';
+    rvBranches.forEach(function(item){var o=document.createElement('option');o.value=item.name;o.textContent=item.name;sel.appendChild(o);});
+    if(cur)sel.value=cur;
+  });
+}
+
+function rvRenderManage(){
+  rvRenderList('rv-company-list',rvCompanies,'rvDelCompany');
+  rvRenderList('rv-category-list',rvCategories,'rvDelCategory');
+  rvRenderBranchList();
+}
+function rvRenderList(id,arr,fnName){
+  var el=document.getElementById(id);
+  if(!arr.length){el.innerHTML='<div class="rv-list-empty">Nothing added yet.</div>';return;}
+  el.innerHTML=arr.map(function(item,i){
+    var c=item.color||{bg:'#f3f4f6',fg:'#374151'};
+    return'<div class="rv-list-item"><span class="badge" style="background:'+c.bg+';color:'+c.fg+';margin-right:4px">'+rvEsc(item.name)+'</span><span class="lname">'+rvEsc(item.name)+'</span><button class="rv-list-item-del" onclick="'+fnName+'('+i+')">✕</button></div>';
+  }).join('');
+}
+function rvRenderBranchList(){
+  var el=document.getElementById('rv-branch-list');
+  if(!rvBranches.length){el.innerHTML='<div class="rv-list-empty">Nothing added yet.</div>';return;}
+  el.innerHTML=rvBranches.map(function(item,i){
+    return'<div class="rv-list-item"><span class="rv-branch-badge" style="margin-right:4px">📍 '+rvEsc(item.name)+'</span><span class="lname">'+rvEsc(item.name)+'</span><button class="rv-list-item-del" onclick="rvDelBranch('+i+')">✕</button></div>';
+  }).join('');
+}
+
+function rvAddCompany(){
+  var val=document.getElementById('rv-new-company').value.trim();
+  if(!val)return rvToast('Enter a company name.','err');
+  for(var i=0;i<rvCompanies.length;i++)if(rvCompanies[i].name.toLowerCase()===val.toLowerCase())return rvToast('"'+val+'" already exists.','err');
+  rvCompanies.push({name:val,color:rvNextColor(rvCompanies)});
+  document.getElementById('rv-new-company').value='';
+  rvRenderManage();rvPopulateDropdowns();rvScheduleAutoSave();rvToast('"'+val+'" added.');
+}
+function rvDelCompany(i){
+  var name=rvCompanies[i].name;
+  if(!confirm('Delete "'+name+'"?'))return;
+  rvCompanies.splice(i,1);rvRenderManage();rvPopulateDropdowns();rvScheduleAutoSave();rvToast('"'+name+'" removed.');
+}
+
+function rvAddCategory(){
+  var val=document.getElementById('rv-new-category').value.trim();
+  if(!val)return rvToast('Enter a category name.','err');
+  for(var i=0;i<rvCategories.length;i++)if(rvCategories[i].name.toLowerCase()===val.toLowerCase())return rvToast('"'+val+'" already exists.','err');
+  rvCategories.push({name:val,color:rvNextColor(rvCategories)});
+  document.getElementById('rv-new-category').value='';
+  rvRenderManage();rvPopulateDropdowns();rvScheduleAutoSave();rvToast('"'+val+'" added.');
+}
+function rvDelCategory(i){
+  var name=rvCategories[i].name;
+  if(!confirm('Delete "'+name+'"?'))return;
+  rvCategories.splice(i,1);rvRenderManage();rvPopulateDropdowns();rvScheduleAutoSave();rvToast('"'+name+'" removed.');
+}
+
+function rvAddBranch(){
+  var val=document.getElementById('rv-new-branch').value.trim();
+  if(!val)return rvToast('Enter a branch name.','err');
+  for(var i=0;i<rvBranches.length;i++)if(rvBranches[i].name.toLowerCase()===val.toLowerCase())return rvToast('"'+val+'" already exists.','err');
+  rvBranches.push({name:val});
+  document.getElementById('rv-new-branch').value='';
+  rvRenderManage();rvPopulateDropdowns();rvScheduleAutoSave();rvToast('"'+val+'" added.');
+}
+function rvDelBranch(i){
+  var name=rvBranches[i].name;
+  if(!confirm('Delete "'+name+'"?'))return;
+  rvBranches.splice(i,1);rvRenderManage();rvPopulateDropdowns();rvScheduleAutoSave();rvToast('"'+name+'" removed.');
+}
+
+function rvFilteredReceipts(){
+  var fc=document.getElementById('rv-fc-company').value;
+  var fp=document.getElementById('rv-fc-purpose').value;
+  var fb=document.getElementById('rv-fc-branch').value;
+  return rvReceipts.filter(function(r){return(!fc||r.from===fc)&&(!fp||r.purpose===fp)&&(!fb||r.branch===fb);});
+}
+function rvClearFilters(){
+  document.getElementById('rv-fc-company').value='';
+  document.getElementById('rv-fc-purpose').value='';
+  document.getElementById('rv-fc-branch').value='';
+  rvRenderTable();
+}
+
+function rvRenderTable(){
+  var list=rvFilteredReceipts();
+  var tbody=document.getElementById('rv-tbody'),tfoot=document.getElementById('rv-tfoot'),empty=document.getElementById('rv-empty-msg');
+  document.getElementById('rv-header-total').textContent=rvFmt(rvReceipts.reduce(function(s,r){return s+r.amount;},0));
+  document.getElementById('rv-table-title').textContent='Receipts ('+list.length+')';
+  document.getElementById('rv-table-count').textContent=list.length+' records';
+  if(!list.length){tbody.innerHTML='';tfoot.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  var total=list.reduce(function(s,r){return s+r.amount;},0);
+  tbody.innerHTML=list.map(function(r){
+    return'<tr>'+
+      '<td>'+rvEsc(r.date)+'</td>'+
+      '<td class="rv-td-from">'+rvEsc(r.from)+'</td>'+
+      '<td><span class="rv-branch-badge">📍 '+rvEsc(r.branch||'—')+'</span></td>'+
+      '<td>'+rvBadgeForCat(r.purpose)+'</td>'+
+      '<td class="rv-td-notes">'+(r.notes?rvEsc(r.notes):'—')+'</td>'+
+      '<td class="rv-td-amt">'+rvFmt(r.amount)+'</td>'+
+      '<td><div class="actions">'+
+        '<button class="icon-btn" onclick="rvStartEdit('+r.id+')" title="Edit">✏️</button>'+
+        '<button class="icon-btn" onclick="rvDelReceipt('+r.id+')" title="Delete">🗑️</button>'+
+      '</div></td></tr>';
+  }).join('');
+  var fc=document.getElementById('rv-fc-company').value,fp=document.getElementById('rv-fc-purpose').value,fb=document.getElementById('rv-fc-branch').value;
+  var parts=[];if(fc)parts.push(fc);if(fp)parts.push(fp);if(fb)parts.push('Branch: '+fb);
+  var label=parts.length?'Total — '+parts.join(' + '):'Grand Total';
+  tfoot.innerHTML='<tr><td colspan="5" style="font-weight:700">'+rvEsc(label)+'</td><td class="rv-td-amt" style="font-size:15px">'+rvFmt(total)+'</td><td></td></tr>';
+}
+
+function rvRenderSummary(){
+  var body=document.getElementById('rv-summary-body');
+  var sel=document.getElementById('rv-sum-branch').value;
+  var src=sel?rvReceipts.filter(function(r){return r.branch===sel;}):rvReceipts;
+  if(!src.length){body.innerHTML='<div class="empty-state"><div class="empty-icon">📊</div><p>No receipts'+(sel?' for branch "'+rvEsc(sel)+'"':'')+' to summarise.</p></div>';return;}
+  var total=src.reduce(function(s,r){return s+r.amount;},0);
+  function group(key){var m={};src.forEach(function(r){var k=r[key]||'Unknown';m[k]=(m[k]||0)+r.amount;});return Object.keys(m).map(function(k){return[k,m[k]];}).sort(function(a,b){return b[1]-a[1];});}
+  function rows(entries,useBadge){
+    return entries.map(function(e,i){
+      var pct=total?(e[1]/total*100):0;
+      var nameHtml=useBadge?'<div style="margin-bottom:5px">'+rvBadgeForCat(e[0])+'</div>':'<span class="rv-sum-name">'+rvEsc(e[0])+'</span>';
+      return'<div class="rv-sum-row">'+
+        '<div class="rv-sum-left">'+nameHtml+
+          '<div class="rv-bar-track"><div class="rv-bar-fill" style="width:'+pct.toFixed(1)+'%;background:'+RV_BAR_COLORS[i%RV_BAR_COLORS.length]+'"></div></div></div>'+
+        '<div class="rv-sum-right"><span class="rv-s-amt">'+rvFmt(e[1])+'</span><span class="rv-s-pct">'+pct.toFixed(1)+'%</span></div></div>';
+    }).join('');
+  }
+  var branchSection=!sel?'<div class="rv-sum-section"><div class="rv-sum-heading">By Branch</div>'+rows(group('branch'),false)+'</div>':'';
+  body.innerHTML=
+    '<div class="rv-sum-section"><div class="rv-sum-heading">By Category</div>'+rows(group('purpose'),true)+'</div>'+
+    '<div class="rv-sum-section"><div class="rv-sum-heading">By Company</div>'+rows(group('from'),false)+'</div>'+
+    branchSection+
+    '<div class="rv-grand-row"><span>Grand Total'+(sel?' — '+rvEsc(sel)+' Branch':'')+'</span><span>'+rvFmt(total)+'</span></div>';
+}
+
+function rvExportPDF(){rvRenderSummary();window.print();}
+
+function rvSubmitForm(){
+  var date=document.getElementById('rv-f-date').value.trim();
+  var amount=parseFloat(document.getElementById('rv-f-amount').value);
+  var from=document.getElementById('rv-f-from').value;
+  var purpose=document.getElementById('rv-f-purpose').value;
+  var branch=document.getElementById('rv-f-branch').value;
+  var notes=document.getElementById('rv-f-notes').value.trim();
+  if(!date||!from)return rvToast('Date and Company are required.','err');
+  if(!purpose)return rvToast('Please select a category.','err');
+  if(!branch)return rvToast('Please select a branch.','err');
+  if(isNaN(amount)||amount<=0)return rvToast('Enter a valid positive amount.','err');
+  if(rvEditId!==null){
+    rvReceipts=rvReceipts.map(function(r){return r.id===rvEditId?{id:r.id,date:date,amount:amount,from:from,purpose:purpose,branch:branch,notes:notes}:r;});
+    rvCancelEdit();rvToast('Receipt updated.');
+  }else{
+    rvReceipts.push({id:rvNextId++,date:date,amount:amount,from:from,purpose:purpose,branch:branch,notes:notes});
+    rvClearForm();rvToast('Receipt added.');
+  }
+  rvScheduleAutoSave();
+}
+function rvClearForm(){['rv-f-date','rv-f-amount','rv-f-from','rv-f-purpose','rv-f-branch','rv-f-notes'].forEach(function(id){document.getElementById(id).value='';});}
+function rvStartEdit(id){
+  var r=rvReceipts.find(function(x){return x.id===id;});if(!r)return;
+  rvEditId=id;
+  document.getElementById('rv-f-date').value=r.date;
+  document.getElementById('rv-f-amount').value=r.amount;
+  document.getElementById('rv-f-from').value=r.from;
+  document.getElementById('rv-f-purpose').value=r.purpose;
+  document.getElementById('rv-f-branch').value=r.branch||'';
+  document.getElementById('rv-f-notes').value=r.notes||'';
+  document.getElementById('rv-form-title').textContent='✏️ Edit Receipt';
+  document.getElementById('rv-submit-btn').textContent='Update Receipt';
+  document.getElementById('rv-cancel-btn').style.display='inline-flex';
+  /* switch to receipts tab */
+  document.querySelectorAll('.rv-tab')[0].click();
+  var page=document.getElementById('page-receipts');
+  if(page)page.scrollTop=0;
+}
+function rvCancelEdit(){
+  rvEditId=null;rvClearForm();
+  document.getElementById('rv-form-title').textContent='➕ Add Receipt';
+  document.getElementById('rv-submit-btn').textContent='Add Receipt';
+  document.getElementById('rv-cancel-btn').style.display='none';
+}
+function rvDelReceipt(id){
+  if(!confirm('Delete this receipt?'))return;
+  rvReceipts=rvReceipts.filter(function(r){return r.id!==id;});
+  rvScheduleAutoSave();rvToast('Receipt deleted.');
+}
+
+/* initialise on page load */
+rvInit();
+rvRenderTable();
 </script>
 </body>
 </html>
