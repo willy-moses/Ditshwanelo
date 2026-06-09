@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Receipt Vault</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* ── inherits the host app's visual language ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#0f2540;--navy-mid:#1a3a5c;--gold:#c8923a;--gold-light:#e8b060;
+  --cream:#faf8f5;--white:#fff;
+  --text:#1a1a2e;--text-muted:#5a6a7a;--text-light:#8a9aaa;
+  --border:#dde3ea;--border-light:#eef1f5;
+  --success:#1a7a4a;--success-bg:#e8f5ee;
+  --warn:#8a5c00;--warn-bg:#fef7e6;
+  --danger:#8a1a1a;--danger-bg:#fde8e8;
+  --info:#1a4a8a;--info-bg:#dbeafe;
+  --shadow:0 2px 12px rgba(15,37,64,.08);
+  --radius:10px;--radius-lg:16px;
+}
+html,body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);font-size:14px;line-height:1.6;height:100%}
+
+/* ── PAGE WRAPPER ── */
+.rv-page{padding:20px;max-width:100%}
+
+/* ── SECTION HEADER (matches app style, no logo) ── */
+.rv-header{
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:10px;
+  margin-bottom:18px;
+}
+.rv-header-left h2{
+  font-family:'DM Serif Display',serif;font-size:22px;color:var(--navy);
+  display:flex;align-items:center;gap:8px;
+}
+.rv-header-left p{font-size:12px;color:var(--text-muted);margin-top:2px}
+.rv-header-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* ── GRAND TOTAL BADGE ── */
+.total-badge{
+  background:var(--navy);color:#fff;
+  border-radius:var(--radius);padding:8px 16px;
+  text-align:right;
+}
+.total-label{font-size:10px;color:rgba(255,255,255,.5);letter-spacing:1.2px;text-transform:uppercase;display:block}
+.total-amt{font-family:'DM Serif Display',serif;font-size:20px;color:var(--gold-light)}
+
+/* ── SAVE STATUS ── */
+.save-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--text-light);flex-shrink:0;transition:background .3s}
+.dot.linked{background:var(--success)}
+.dot.saving{background:var(--gold);animation:blink .5s infinite alternate}
+.dot.saved{background:var(--success)}
+.dot.error{background:var(--danger)}
+@keyframes blink{to{opacity:.3}}
+
+/* ── TABS (matches app ai-tabs2 style) ── */
+.rv-tabs{
+  display:flex;gap:4px;background:var(--white);
+  border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:5px;margin-bottom:16px;flex-wrap:wrap;
+}
+.rv-tab{
+  flex:1;min-width:90px;padding:8px 10px;border-radius:9px;border:none;
+  font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;
+  cursor:pointer;color:var(--text-muted);background:transparent;transition:all .18s;
+}
+.rv-tab:hover{background:var(--cream);color:var(--text)}
+.rv-tab.active{background:var(--navy);color:#fff}
+
+/* ── PANEL ── */
+.panel{display:none}.panel.active{display:block}
+
+/* ── SETUP BANNER ── */
+.setup-banner{
+  background:linear-gradient(135deg,var(--navy) 0%,var(--navy-mid) 100%);
+  border-radius:var(--radius-lg);padding:22px 26px;margin-bottom:18px;
+  display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;
+}
+.setup-icon{font-size:40px;flex-shrink:0}
+.setup-text h3{font-family:'DM Serif Display',serif;font-size:18px;color:#fff;margin-bottom:6px}
+.setup-text p{font-size:13px;color:rgba(255,255,255,.6);line-height:1.6;max-width:500px}
+.setup-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.step-list{list-style:none;margin-top:8px;display:flex;flex-direction:column;gap:5px}
+.step-list li{font-size:12px;color:rgba(255,255,255,.5);display:flex;align-items:center;gap:7px}
+.step-list li::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--gold);flex-shrink:0}
+
+/* ── COMPAT NOTICE ── */
+.compat-notice{
+  background:var(--warn-bg);border:1px solid #f0d890;
+  border-radius:var(--radius);padding:10px 14px;
+  margin-bottom:14px;font-size:12px;color:var(--warn);display:none;
+}
+.compat-notice strong{display:block;margin-bottom:3px}
+
+/* ── CARD ── */
+.card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);margin-bottom:16px}
+.card-head{padding:12px 16px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-head h3{font-family:'DM Serif Display',serif;font-size:15px;color:var(--navy)}
+.card-body{padding:16px}
+
+/* ── FORM GRID ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field.full{grid-column:1/-1}
+.field label{font-size:11px;font-weight:500;color:var(--text-muted);letter-spacing:.03em;text-transform:uppercase}
+.field input,.field select{
+  font-family:'DM Sans',sans-serif;font-size:13px;padding:8px 12px;
+  border:1.5px solid var(--border);border-radius:8px;
+  color:var(--text);background:var(--cream);outline:none;
+  transition:border-color .18s,background .18s;width:100%;
+}
+.field input:focus,.field select:focus{border-color:var(--navy);background:var(--white);box-shadow:0 0 0 3px rgba(15,37,64,.05)}
+.form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+/* ── FILTER BAR ── */
+.filter-bar{
+  background:var(--white);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:10px 14px;
+  display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;
+  margin-bottom:14px;
+}
+.filter-bar .field{flex:1;min-width:140px}
+
+/* ── TABLE ── */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;min-width:680px}
+thead th{background:var(--navy);color:rgba(255,255,255,.75);padding:9px 12px;text-align:left;font-size:10.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border-light);transition:background .15s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:#f7f9fc}
+tbody td{padding:10px 12px;font-size:12.5px;color:var(--text);vertical-align:middle}
+tfoot td{padding:11px 12px;font-size:13px;border-top:2px solid var(--border)}
+.td-amt{font-family:'DM Serif Display',serif;color:var(--success);font-size:14px;font-weight:600}
+.td-from{font-weight:600;color:var(--navy)}
+.td-notes{color:var(--text-muted);font-size:12px}
+.badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.branch-badge{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;background:var(--info-bg);color:var(--info)}
+.actions{display:flex;gap:3px}
+.icon-btn{background:none;border:none;cursor:pointer;font-size:14px;padding:4px 6px;border-radius:6px;transition:background .15s}
+.icon-btn:hover{background:var(--cream)}
+.empty-state{text-align:center;padding:36px 20px;color:var(--text-muted)}
+.empty-state .ei{font-size:28px;opacity:.35;margin-bottom:7px}
+.record-count{font-size:12px;color:var(--text-muted);background:var(--cream);border:1px solid var(--border);padding:3px 10px;border-radius:20px}
+
+/* ── BUTTONS (same as host app) ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--radius);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .18s;border:1.5px solid transparent;white-space:nowrap}
+.btn-primary{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn-primary:hover{background:var(--navy-mid)}
+.btn-gold{background:var(--gold);color:#fff;border-color:var(--gold)}
+.btn-gold:hover{background:var(--gold-light)}
+.btn-outline{background:transparent;color:var(--text-muted);border-color:var(--border)}
+.btn-outline:hover{border-color:var(--navy);color:var(--navy);background:var(--cream)}
+.btn-sm{padding:5px 10px;font-size:12px}
+
+/* ── MANAGE LISTS ── */
+.manage-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.list-box{border:1.5px solid var(--border);border-radius:var(--radius-lg);padding:14px}
+.list-box-title{font-weight:600;font-size:13px;color:var(--navy);margin-bottom:12px}
+.add-row{display:flex;gap:6px;margin-bottom:12px}
+.add-row input{flex:1;font-family:'DM Sans',sans-serif;font-size:13px;padding:7px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);color:var(--text);outline:none}
+.add-row input:focus{border-color:var(--navy);background:var(--white)}
+.list-items{display:flex;flex-direction:column;gap:5px;max-height:240px;overflow-y:auto}
+.list-item{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--cream);border-radius:8px;font-size:13px}
+.list-item span.lname{flex:1;color:var(--text)}
+.list-item-del{background:none;border:none;cursor:pointer;color:var(--danger);font-size:13px;padding:2px 5px;border-radius:5px;transition:background .15s}
+.list-item-del:hover{background:var(--danger-bg)}
+.list-empty{font-size:12px;color:var(--text-muted);text-align:center;padding:14px 0}
+
+/* ── SUMMARY ── */
+.sum-section{margin-bottom:24px}
+.sum-heading{font-size:10px;font-weight:600;color:var(--text-light);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.sum-row{display:flex;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid var(--border-light)}
+.sum-left{flex:1}
+.sum-name{font-weight:600;font-size:13px;display:block;margin-bottom:5px}
+.bar-track{background:var(--border-light);border-radius:6px;height:7px;overflow:hidden}
+.bar-fill{height:100%;border-radius:6px;transition:width .5s}
+.sum-right{min-width:100px;text-align:right}
+.s-amt{font-weight:700;color:var(--success);font-family:'DM Serif Display',serif;font-size:14px;display:block}
+.s-pct{font-size:11px;color:var(--text-muted)}
+.grand-row{display:flex;justify-content:space-between;padding-top:16px;font-family:'DM Serif Display',serif;font-size:16px;font-weight:700;border-top:2px solid var(--border);margin-top:4px}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:20px;right:20px;padding:10px 18px;border-radius:10px;color:#fff;font-weight:600;font-size:13px;box-shadow:var(--shadow);opacity:0;transform:translateY(8px);transition:opacity .22s,transform .22s;pointer-events:none;z-index:9999}
+#toast.show{opacity:1;transform:translateY(0)}
+
+/* ── PRINT ── */
+@media print{
+  .rv-header-right,.rv-tabs,.filter-bar,.form-actions,.setup-banner,.compat-notice,.btn,.icon-btn,.add-row,.list-item-del,#panel-receipts,#panel-manage,#pdf-export-btn{display:none!important}
+  #panel-summary{display:block!important}
+  body{background:#fff}
+  .card{box-shadow:none;border:1px solid #ddd}
+}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  .rv-page{padding:12px}
+  .form-grid{grid-template-columns:1fr}
+  .field.full{grid-column:1}
+  .manage-grid{grid-template-columns:1fr}
+  .filter-bar{flex-direction:column;align-items:stretch}
+  .rv-header{gap:8px}
+  .total-badge{padding:6px 12px}
+  .total-amt{font-size:17px}
+}
+@media(max-width:400px){
+  .rv-tabs{gap:2px}
+  .rv-tab{min-width:70px;font-size:11px;padding:7px 6px}
+}
+</style>
+</head>
+<body>
+
+<div class="rv-page">
+
+  <!-- ── SECTION HEADER ── -->
+  <div class="rv-header">
+    <div class="rv-header-left">
+      <h2>🧾 Receipt Vault</h2>
+      <p>Track and summarise organisational spending</p>
+    </div>
+    <div class="rv-header-right">
+      <div class="save-status">
+        <span class="dot" id="dot"></span>
+        <span id="save-txt">No file linked</span>
+      </div>
+      <div class="total-badge">
+        <span class="total-label">Grand Total</span>
+        <span class="total-amt" id="header-total">BWP 0.00</span>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="openExistingFile()">📂 Open File</button>
+      <button class="btn btn-gold btn-sm" onclick="createNewFile()">✨ New File</button>
+      <input type="file" id="file-input" accept=".xlsx,.xls" onchange="legacyLoad(event)" style="display:none">
+    </div>
+  </div>
+
+  <!-- ── TABS ── -->
+  <div class="rv-tabs">
+    <button class="rv-tab active" onclick="switchTab('receipts',this)">📄 Receipts</button>
+    <button class="rv-tab" onclick="switchTab('summary',this)">📊 Summary</button>
+    <button class="rv-tab" onclick="switchTab('manage',this)">⚙️ Manage Lists</button>
+  </div>
+
+  <!-- ══ RECEIPTS PANEL ══ -->
+  <div id="panel-receipts" class="panel active">
+
+    <div class="compat-notice" id="compat-notice">
+      <strong>⚠️ Auto-save not available in this browser</strong>
+      Use Chrome or Edge for automatic saving. You can still load and manually download below.
+      <br><br><button class="btn btn-outline btn-sm" onclick="document.getElementById('file-input').click()">📂 Load .xlsx (manual)</button>
+    </div>
+
+    <div class="setup-banner" id="setup-banner">
+      <div class="setup-icon">🗄️</div>
+      <div class="setup-text">
+        <h3>Link your Excel file as the database</h3>
+        <p>Every change saves directly back to your .xlsx file automatically. Re-open the same file after refresh to continue where you left off.</p>
+        <ul class="step-list">
+          <li>Open an existing file to continue where you left off</li>
+          <li>Or create a brand-new file to start fresh</li>
+          <li>Every add, edit or delete saves automatically</li>
+        </ul>
+        <div class="setup-actions">
+          <button class="btn btn-gold" onclick="openExistingFile()">📂 Open Existing File</button>
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="createNewFile()">✨ Create New File</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADD / EDIT FORM -->
+    <div class="card">
+      <div class="card-head">
+        <h3 id="form-title">➕ Add Receipt</h3>
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="field"><label>Date *</label><input type="date" id="f-date"></div>
+          <div class="field"><label>Amount (BWP) *</label><input type="number" id="f-amount" min="0" step="0.01" placeholder="0.00"></div>
+          <div class="field"><label>From (Company) *</label><select id="f-from"><option value="">— Select company —</option></select></div>
+          <div class="field"><label>Category *</label><select id="f-purpose"><option value="">— Select category —</option></select></div>
+          <div class="field"><label>Branch *</label><select id="f-branch"><option value="">— Select branch —</option></select></div>
+          <div class="field"><label>Notes (optional)</label><input type="text" id="f-notes" placeholder="Extra details…"></div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-outline" id="cancel-btn" style="display:none" onclick="cancelEdit()">Cancel</button>
+          <button class="btn btn-primary" id="submit-btn" onclick="submitForm()">Add Receipt</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILTER BAR -->
+    <div class="filter-bar">
+      <div class="field"><label>🏢 Company</label><select id="fc-company" onchange="renderTable()"><option value="">All companies</option></select></div>
+      <div class="field"><label>🗂️ Category</label><select id="fc-purpose" onchange="renderTable()"><option value="">All categories</option></select></div>
+      <div class="field"><label>🏘️ Branch</label><select id="fc-branch" onchange="renderTable()"><option value="">All branches</option></select></div>
+      <button class="btn btn-outline btn-sm" style="align-self:flex-end" onclick="clearFilters()">✕ Clear</button>
+    </div>
+
+    <!-- TABLE -->
+    <div class="card">
+      <div class="card-head">
+        <h3 id="table-title">Receipts (0)</h3>
+        <span class="record-count" id="table-count">0</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>From</th><th>Branch</th><th>Category</th><th>Notes</th><th>Amount</th><th></th></tr></thead>
+          <tbody id="tbody"></tbody>
+          <tfoot id="tfoot"></tfoot>
+        </table>
+        <div class="empty-state" id="empty-msg">
+          <div class="ei">🧾</div>
+          <p>No receipts yet. Add companies, categories &amp; branches in <strong>Manage Lists</strong>, then add receipts here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SUMMARY PANEL ══ -->
+  <div id="panel-summary" class="panel">
+    <div class="card">
+      <div class="card-head">
+        <h3>📊 Spending Summary</h3>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="field" style="flex-direction:row;align-items:center;gap:8px;margin:0">
+            <label style="white-space:nowrap;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em">Branch:</label>
+            <select id="sum-branch" onchange="renderSummary()" style="padding:6px 28px 6px 10px;font-size:12px">
+              <option value="">All branches</option>
+            </select>
+          </div>
+          <button id="pdf-export-btn" class="btn btn-outline btn-sm" onclick="exportPDF()">🖨️ Export PDF</button>
+        </div>
+      </div>
+      <div class="card-body" id="summary-body">
+        <div class="empty-state"><div class="ei">📊</div><p>No receipts to summarise yet.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MANAGE LISTS PANEL ══ -->
+  <div id="panel-manage" class="panel">
+    <div class="card">
+      <div class="card-head">
+        <h3>⚙️ Manage Companies, Categories &amp; Branches</h3>
+      </div>
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Changes save automatically to your linked Excel file.</p>
+        <div class="manage-grid">
+          <div class="list-box">
+            <div class="list-box-title">🏢 Companies</div>
+            <div class="add-row">
+              <input type="text" id="new-company" placeholder="e.g. Shoprite" onkeydown="if(event.key==='Enter')addCompany()">
+              <button class="btn btn-gold btn-sm" onclick="addCompany()">Add</button>
+            </div>
+            <div class="list-items" id="company-list"><div class="list-empty">No companies yet.</div></div>
+          </div>
+          <div class="list-box">
+            <div class="list-box-title">🗂️ Categories</div>
+            <div class="add-row">
+              <input type="text" id="new-category" placeholder="e.g. Fuel" onkeydown="if(event.key==='Enter')addCategory()">
+              <button class="btn btn-gold btn-sm" onclick="addCategory()">Add</button>
+            </div>
+            <div class="list-items" id="category-list"><div class="list-empty">No categories yet.</div></div>
+          </div>
+          <div class="list-box">
+            <div class="list-box-title">🏘️ Branches</div>
+            <div class="add-row">
+              <input type="text" id="new-branch" placeholder="e.g. Gantsi" onkeydown="if(event.key==='Enter')addBranch()">
+              <button class="btn btn-gold btn-sm" onclick="addBranch()">Add</button>
+            </div>
+            <div class="list-items" id="branch-list"><div class="list-empty">No branches yet.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /rv-page -->
+<div id="toast"></div>
+
+<script>
+var receipts=[],companies=[],categories=[],branches=[];
+var editId=null,nextId=1,fileHandle=null,autoSaveTimer=null;
+
+var PALETTE=[
+  {bg:'#fef3c7',fg:'#92400e'},{bg:'#d1fae5',fg:'#065f46'},
+  {bg:'#dbeafe',fg:'#1e40af'},{bg:'#ede9fe',fg:'#5b21b6'},
+  {bg:'#fce7f3',fg:'#9d174d'},{bg:'#e0f2fe',fg:'#0369a1'},
+  {bg:'#fee2e2',fg:'#991b1b'},{bg:'#fff7ed',fg:'#c2410c'},
+  {bg:'#f0fdf4',fg:'#166534'},{bg:'#fdf4ff',fg:'#7e22ce'}
+];
+var BAR_COLORS=['#c8923a','#5b8dee','#34c98a','#e05c5c','#a78bfa','#f97316','#14b8a6','#ec4899','#84cc16','#6b7280'];
+var FSAPI=!!window.showOpenFilePicker;
+
+if(!FSAPI) document.getElementById('compat-notice').style.display='block';
+
+async function openExistingFile(){
+  if(!FSAPI){document.getElementById('file-input').click();return;}
+  try{
+    var[handle]=await window.showOpenFilePicker({types:[{description:'Excel',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}],multiple:false});
+    fileHandle=handle;
+    var file=await handle.getFile();
+    await parseWorkbook(file);
+    setLinked(file.name);
+    toast('Linked to '+file.name+' ✅');
+  }catch(e){if(e.name!=='AbortError')toast('Could not open file.','err');}
+}
+
+async function createNewFile(){
+  if(!FSAPI){
+    receipts=[];companies=[];categories=[];branches=[];nextId=1;fileHandle=null;
+    populateDropdowns();renderManage();renderTable();
+    setDotState('error','No auto-save (use Chrome/Edge)');
+    document.getElementById('setup-banner').style.display='none';
+    toast('Started fresh — in-memory only.','err');return;
+  }
+  try{
+    var handle=await window.showSaveFilePicker({suggestedName:'receipts.xlsx',types:[{description:'Excel',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}]});
+    fileHandle=handle;
+    receipts=[];companies=[];categories=[];branches=[];nextId=1;
+    populateDropdowns();renderManage();renderTable();
+    setLinked(handle.name);
+    await writeToDisk();
+    toast('Created '+handle.name+' ✅');
+  }catch(e){if(e.name!=='AbortError')toast('Could not create file.','err');}
+}
+
+function legacyLoad(e){
+  var file=e.target.files[0];if(!file)return;
+  parseWorkbook(file).then(function(){
+    document.getElementById('setup-banner').style.display='none';
+    setDotState('linked','Loaded (manual — no auto-save)');
+    toast('Loaded '+file.name);
+  });
+  e.target.value='';
+}
+
+function parseWorkbook(file){
+  return new Promise(function(resolve,reject){
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      try{
+        var wb=XLSX.read(ev.target.result,{type:'array'});
+        receipts=[];
+        if(wb.Sheets['Receipts']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Receipts'],{defval:''}).forEach(function(r){
+            if(!r['Date']&&!r['Amount'])return;
+            receipts.push({id:nextId++,date:String(r['Date']||''),amount:parseFloat(r['Amount'])||0,from:String(r['From']||''),purpose:String(r['Purpose']||''),branch:String(r['Branch']||''),notes:String(r['Notes']||'')});
+          });
+        }
+        companies=[];
+        if(wb.Sheets['Companies']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Companies'],{defval:''}).forEach(function(r,i){
+            if(r['Name'])companies.push({name:String(r['Name']),color:{bg:String(r['ColorBg']||PALETTE[i%PALETTE.length].bg),fg:String(r['ColorFg']||PALETTE[i%PALETTE.length].fg)}});
+          });
+        }
+        categories=[];
+        if(wb.Sheets['Categories']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Categories'],{defval:''}).forEach(function(r,i){
+            if(r['Name'])categories.push({name:String(r['Name']),color:{bg:String(r['ColorBg']||PALETTE[i%PALETTE.length].bg),fg:String(r['ColorFg']||PALETTE[i%PALETTE.length].fg)}});
+          });
+        }
+        branches=[];
+        if(wb.Sheets['Branches']){
+          XLSX.utils.sheet_to_json(wb.Sheets['Branches'],{defval:''}).forEach(function(r){
+            if(r['Name'])branches.push({name:String(r['Name'])});
+          });
+        }
+        populateDropdowns();renderManage();renderTable();resolve();
+      }catch(err){toast('Could not read file.','err');reject(err);}
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function buildWorkbook(){
+  var wb=XLSX.utils.book_new();
+  var rRows=receipts.map(function(r){return{Date:r.date,Amount:r.amount,From:r.from,Purpose:r.purpose,Branch:r.branch||'',Notes:r.notes||''};});
+  var wsR=XLSX.utils.json_to_sheet(rRows.length?rRows:[{Date:'',Amount:'',From:'',Purpose:'',Branch:'',Notes:''}],{header:['Date','Amount','From','Purpose','Branch','Notes']});
+  wsR['!cols']=[{wch:14},{wch:12},{wch:24},{wch:18},{wch:18},{wch:32}];
+  XLSX.utils.book_append_sheet(wb,wsR,'Receipts');
+  var cRows=companies.map(function(c){return{Name:c.name,ColorBg:c.color.bg,ColorFg:c.color.fg};});
+  var wsC=XLSX.utils.json_to_sheet(cRows.length?cRows:[{Name:'',ColorBg:'',ColorFg:''}],{header:['Name','ColorBg','ColorFg']});
+  XLSX.utils.book_append_sheet(wb,wsC,'Companies');
+  var kRows=categories.map(function(c){return{Name:c.name,ColorBg:c.color.bg,ColorFg:c.color.fg};});
+  var wsK=XLSX.utils.json_to_sheet(kRows.length?kRows:[{Name:'',ColorBg:'',ColorFg:''}],{header:['Name','ColorBg','ColorFg']});
+  XLSX.utils.book_append_sheet(wb,wsK,'Categories');
+  var bRows=branches.map(function(b){return{Name:b.name};});
+  var wsB=XLSX.utils.json_to_sheet(bRows.length?bRows:[{Name:''}],{header:['Name']});
+  XLSX.utils.book_append_sheet(wb,wsB,'Branches');
+  return XLSX.write(wb,{bookType:'xlsx',type:'array'});
+}
+
+async function writeToDisk(){
+  if(!fileHandle)return;
+  setDotState('saving','Saving…');
+  try{
+    var writable=await fileHandle.createWritable();
+    var data=buildWorkbook();
+    await writable.write(new Blob([data],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    await writable.close();
+    var name=fileHandle.name;
+    setDotState('saved','✅ Saved · '+name);
+    setTimeout(function(){if(fileHandle)setDotState('linked','Linked: '+name);},1800);
+  }catch(e){
+    setDotState('error','⚠️ Save failed');
+    toast('Auto-save failed: '+e.message,'err');
+  }
+}
+
+function scheduleAutoSave(){
+  renderTable();
+  if(!fileHandle)return;
+  if(autoSaveTimer)clearTimeout(autoSaveTimer);
+  setDotState('saving','Saving…');
+  autoSaveTimer=setTimeout(function(){writeToDisk();},900);
+}
+
+function setLinked(name){
+  document.getElementById('setup-banner').style.display='none';
+  setDotState('linked','Linked: '+name);
+}
+function setDotState(state,txt){
+  document.getElementById('dot').className='dot '+state;
+  document.getElementById('save-txt').textContent=txt;
+}
+
+function fmt(n){return'BWP '+parseFloat(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function toast(msg,type){
+  var t=document.getElementById('toast');
+  t.textContent=msg;t.style.background=type==='err'?'#8a1a1a':'#1a7a4a';
+  t.classList.add('show');setTimeout(function(){t.classList.remove('show');},3000);
+}
+function nextColor(arr){return PALETTE[arr.length%PALETTE.length];}
+
+function switchTab(name,btn){
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.rv-tab').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('panel-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='summary')renderSummary();
+}
+
+function badgeForCat(name){
+  for(var i=0;i<categories.length;i++){
+    if(categories[i].name===name){
+      var c=categories[i].color||{bg:'#f3f4f6',fg:'#374151'};
+      return'<span class="badge" style="background:'+c.bg+';color:'+c.fg+'">'+esc(name)+'</span>';
+    }
+  }
+  return'<span class="badge" style="background:var(--border-light);color:var(--text-muted)">'+esc(name||'—')+'</span>';
+}
+
+function populateDropdowns(){
+  ['f-from','fc-company'].forEach(function(id,i){
+    var sel=document.getElementById(id),cur=sel.value;
+    sel.innerHTML='<option value="">'+(i===0?'— Select company —':'All companies')+'</option>';
+    companies.forEach(function(item){var o=document.createElement('option');o.value=item.name;o.textContent=item.name;sel.appendChild(o);});
+    if(cur)sel.value=cur;
+  });
+  ['f-purpose','fc-purpose'].forEach(function(id,i){
+    var sel=document.getElementById(id),cur=sel.value;
+    sel.innerHTML='<option value="">'+(i===0?'— Select category —':'All categories')+'</option>';
+    categories.forEach(function(item){var o=document.createElement('option');o.value=item.name;o.textContent=item.name;sel.appendChild(o);});
+    if(cur)sel.value=cur;
+  });
+  ['f-branch','fc-branch','sum-branch'].forEach(function(id,i){
+    var sel=document.getElementById(id),cur=sel.value;
+    sel.innerHTML='<option value="">'+(i===0?'— Select branch —':'All branches')+'</option>';
+    branches.forEach(function(item){var o=document.createElement('option');o.value=item.name;o.textContent=item.name;sel.appendChild(o);});
+    if(cur)sel.value=cur;
+  });
+}
+
+function renderManage(){
+  renderList('company-list',companies,delCompany);
+  renderList('category-list',categories,delCategory);
+  renderBranchList();
+}
+function renderList(id,arr,fn){
+  var el=document.getElementById(id);
+  if(!arr.length){el.innerHTML='<div class="list-empty">Nothing added yet.</div>';return;}
+  el.innerHTML=arr.map(function(item,i){
+    var c=item.color||{bg:'#f3f4f6',fg:'#374151'};
+    return'<div class="list-item"><span class="badge" style="background:'+c.bg+';color:'+c.fg+';margin-right:4px">'+esc(item.name)+'</span><span class="lname">'+esc(item.name)+'</span><button class="list-item-del" onclick="'+fn.name+'('+i+')">✕</button></div>';
+  }).join('');
+}
+function renderBranchList(){
+  var el=document.getElementById('branch-list');
+  if(!branches.length){el.innerHTML='<div class="list-empty">Nothing added yet.</div>';return;}
+  el.innerHTML=branches.map(function(item,i){
+    return'<div class="list-item"><span class="branch-badge" style="margin-right:4px">📍 '+esc(item.name)+'</span><span class="lname">'+esc(item.name)+'</span><button class="list-item-del" onclick="delBranch('+i+')">✕</button></div>';
+  }).join('');
+}
+
+function addCompany(){
+  var val=document.getElementById('new-company').value.trim();
+  if(!val)return toast('Enter a company name.','err');
+  for(var i=0;i<companies.length;i++)if(companies[i].name.toLowerCase()===val.toLowerCase())return toast('"'+val+'" already exists.','err');
+  companies.push({name:val,color:nextColor(companies)});
+  document.getElementById('new-company').value='';
+  renderManage();populateDropdowns();scheduleAutoSave();
+  toast('"'+val+'" added.');
+}
+function delCompany(i){
+  var name=companies[i].name;
+  if(!confirm('Delete "'+name+'"?'))return;
+  companies.splice(i,1);renderManage();populateDropdowns();scheduleAutoSave();toast('"'+name+'" removed.');
+}
+
+function addCategory(){
+  var val=document.getElementById('new-category').value.trim();
+  if(!val)return toast('Enter a category name.','err');
+  for(var i=0;i<categories.length;i++)if(categories[i].name.toLowerCase()===val.toLowerCase())return toast('"'+val+'" already exists.','err');
+  categories.push({name:val,color:nextColor(categories)});
+  document.getElementById('new-category').value='';
+  renderManage();populateDropdowns();scheduleAutoSave();toast('"'+val+'" added.');
+}
+function delCategory(i){
+  var name=categories[i].name;
+  if(!confirm('Delete "'+name+'"?'))return;
+  categories.splice(i,1);renderManage();populateDropdowns();scheduleAutoSave();toast('"'+name+'" removed.');
+}
+
+function addBranch(){
+  var val=document.getElementById('new-branch').value.trim();
+  if(!val)return toast('Enter a branch name.','err');
+  for(var i=0;i<branches.length;i++)if(branches[i].name.toLowerCase()===val.toLowerCase())return toast('"'+val+'" already exists.','err');
+  branches.push({name:val});
+  document.getElementById('new-branch').value='';
+  renderManage();populateDropdowns();scheduleAutoSave();toast('"'+val+'" added.');
+}
+function delBranch(i){
+  var name=branches[i].name;
+  if(!confirm('Delete "'+name+'"?'))return;
+  branches.splice(i,1);renderManage();populateDropdowns();scheduleAutoSave();toast('"'+name+'" removed.');
+}
+
+function filteredReceipts(){
+  var fc=document.getElementById('fc-company').value;
+  var fp=document.getElementById('fc-purpose').value;
+  var fb=document.getElementById('fc-branch').value;
+  return receipts.filter(function(r){return(!fc||r.from===fc)&&(!fp||r.purpose===fp)&&(!fb||r.branch===fb);});
+}
+function clearFilters(){
+  document.getElementById('fc-company').value='';
+  document.getElementById('fc-purpose').value='';
+  document.getElementById('fc-branch').value='';
+  renderTable();
+}
+
+function renderTable(){
+  var list=filteredReceipts();
+  var tbody=document.getElementById('tbody'),tfoot=document.getElementById('tfoot'),empty=document.getElementById('empty-msg');
+  document.getElementById('header-total').textContent=fmt(receipts.reduce(function(s,r){return s+r.amount;},0));
+  document.getElementById('table-title').textContent='Receipts ('+list.length+')';
+  document.getElementById('table-count').textContent=list.length+' records';
+  if(!list.length){tbody.innerHTML='';tfoot.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  var total=list.reduce(function(s,r){return s+r.amount;},0);
+  tbody.innerHTML=list.map(function(r){
+    return'<tr>'+
+      '<td>'+esc(r.date)+'</td>'+
+      '<td class="td-from">'+esc(r.from)+'</td>'+
+      '<td><span class="branch-badge">📍 '+esc(r.branch||'—')+'</span></td>'+
+      '<td>'+badgeForCat(r.purpose)+'</td>'+
+      '<td class="td-notes">'+(r.notes?esc(r.notes):'—')+'</td>'+
+      '<td class="td-amt">'+fmt(r.amount)+'</td>'+
+      '<td><div class="actions">'+
+        '<button class="icon-btn" onclick="startEdit('+r.id+')" title="Edit">✏️</button>'+
+        '<button class="icon-btn" onclick="delReceipt('+r.id+')" title="Delete">🗑️</button>'+
+      '</div></td></tr>';
+  }).join('');
+  var fc=document.getElementById('fc-company').value,fp=document.getElementById('fc-purpose').value,fb=document.getElementById('fc-branch').value;
+  var parts=[];if(fc)parts.push(fc);if(fp)parts.push(fp);if(fb)parts.push('Branch: '+fb);
+  var label=parts.length?'Total — '+parts.join(' + '):'Grand Total';
+  tfoot.innerHTML='<tr><td colspan="5" style="font-weight:700">'+esc(label)+'</td><td class="td-amt" style="font-size:15px">'+fmt(total)+'</td><td></td></tr>';
+}
+
+function renderSummary(){
+  var body=document.getElementById('summary-body');
+  var sel=document.getElementById('sum-branch').value;
+  var src=sel?receipts.filter(function(r){return r.branch===sel;}):receipts;
+  if(!src.length){body.innerHTML='<div class="empty-state"><div class="ei">📊</div><p>No receipts'+(sel?' for branch "'+esc(sel)+'"':'')+' to summarise.</p></div>';return;}
+  var total=src.reduce(function(s,r){return s+r.amount;},0);
+  function group(key){var m={};src.forEach(function(r){var k=r[key]||'Unknown';m[k]=(m[k]||0)+r.amount;});return Object.keys(m).map(function(k){return[k,m[k]];}).sort(function(a,b){return b[1]-a[1];});}
+  function rows(entries,useBadge){
+    return entries.map(function(e,i){
+      var pct=total?(e[1]/total*100):0;
+      var nameHtml=useBadge?'<div style="margin-bottom:5px">'+badgeForCat(e[0])+'</div>':'<span class="sum-name">'+esc(e[0])+'</span>';
+      return'<div class="sum-row">'+
+        '<div class="sum-left">'+nameHtml+
+          '<div class="bar-track"><div class="bar-fill" style="width:'+pct.toFixed(1)+'%;background:'+BAR_COLORS[i%BAR_COLORS.length]+'"></div></div></div>'+
+        '<div class="sum-right"><span class="s-amt">'+fmt(e[1])+'</span><span class="s-pct">'+pct.toFixed(1)+'%</span></div></div>';
+    }).join('');
+  }
+  var branchSection=!sel?'<div class="sum-section"><div class="sum-heading">By Branch</div>'+rows(group('branch'),false)+'</div>':'';
+  body.innerHTML=
+    '<div class="sum-section"><div class="sum-heading">By Category</div>'+rows(group('purpose'),true)+'</div>'+
+    '<div class="sum-section"><div class="sum-heading">By Company</div>'+rows(group('from'),false)+'</div>'+
+    branchSection+
+    '<div class="grand-row"><span>Grand Total'+(sel?' — '+esc(sel)+' Branch':'')+'</span><span>'+fmt(total)+'</span></div>';
+}
+
+function exportPDF(){renderSummary();window.print();}
+
+function submitForm(){
+  var date=document.getElementById('f-date').value.trim();
+  var amount=parseFloat(document.getElementById('f-amount').value);
+  var from=document.getElementById('f-from').value;
+  var purpose=document.getElementById('f-purpose').value;
+  var branch=document.getElementById('f-branch').value;
+  var notes=document.getElementById('f-notes').value.trim();
+  if(!date||!from)return toast('Date and Company are required.','err');
+  if(!purpose)return toast('Please select a category.','err');
+  if(!branch)return toast('Please select a branch.','err');
+  if(isNaN(amount)||amount<=0)return toast('Enter a valid positive amount.','err');
+  if(editId!==null){
+    receipts=receipts.map(function(r){return r.id===editId?{id:r.id,date:date,amount:amount,from:from,purpose:purpose,branch:branch,notes:notes}:r;});
+    cancelEdit();toast('Receipt updated.');
+  }else{
+    receipts.push({id:nextId++,date:date,amount:amount,from:from,purpose:purpose,branch:branch,notes:notes});
+    clearForm();toast('Receipt added.');
+  }
+  scheduleAutoSave();
+}
+function clearForm(){['f-date','f-amount','f-from','f-purpose','f-branch','f-notes'].forEach(function(id){document.getElementById(id).value='';});}
+function startEdit(id){
+  var r=receipts.find(function(x){return x.id===id;});if(!r)return;
+  editId=id;
+  document.getElementById('f-date').value=r.date;
+  document.getElementById('f-amount').value=r.amount;
+  document.getElementById('f-from').value=r.from;
+  document.getElementById('f-purpose').value=r.purpose;
+  document.getElementById('f-branch').value=r.branch||'';
+  document.getElementById('f-notes').value=r.notes||'';
+  document.getElementById('form-title').textContent='✏️ Edit Receipt';
+  document.getElementById('submit-btn').textContent='Update Receipt';
+  document.getElementById('cancel-btn').style.display='inline-flex';
+  document.querySelectorAll('.rv-tab')[0].click();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function cancelEdit(){
+  editId=null;clearForm();
+  document.getElementById('form-title').textContent='➕ Add Receipt';
+  document.getElementById('submit-btn').textContent='Add Receipt';
+  document.getElementById('cancel-btn').style.display='none';
+}
+function delReceipt(id){
+  if(!confirm('Delete this receipt?'))return;
+  receipts=receipts.filter(function(r){return r.id!==id;});
+  scheduleAutoSave();toast('Receipt deleted.');
+}
+
+renderTable();
+</script>
+</body>
+</html>
