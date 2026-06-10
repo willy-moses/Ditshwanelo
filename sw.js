@@ -1,4 +1,4 @@
-const CACHE = 'ditshwanelo-v2';
+const CACHE = 'ditshwanelo-v3';
 const ASSETS = [
   '/',
   '/index.html',
@@ -22,8 +22,6 @@ const ASSETS = [
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(cache => {
-      /* addAll fails if ANY request fails — use individual adds so
-         one broken CDN doesn't kill the whole install */
       return Promise.allSettled(
         ASSETS.map(url => cache.add(url).catch(err => {
           console.warn('SW: failed to cache', url, err);
@@ -34,7 +32,6 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  /* delete old caches so stale v1 assets don't linger */
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
@@ -45,16 +42,19 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  /* skip non-GET and browser-extension requests */
   if (e.request.method !== 'GET') return;
   if (!e.request.url.startsWith('http')) return;
+
+  // Never cache Supabase or Groq API calls — always fetch live
+  if (e.request.url.includes('supabase.co') || e.request.url.includes('groq.com')) {
+    e.respondWith(fetch(e.request));
+    return;
+  }
 
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
 
-      /* not in cache — try network, then cache the response for next t
-      ime */
       return fetch(e.request).then(response => {
         if (!response || response.status !== 200 || response.type === 'opaque') {
           return response;
@@ -63,7 +63,6 @@ self.addEventListener('fetch', e => {
         caches.open(CACHE).then(cache => cache.put(e.request, clone));
         return response;
       }).catch(() => {
-        /* offline and not cached — return the main page as fallback */
         if (e.request.destination === 'document') {
           return caches.match('/index.html');
         }

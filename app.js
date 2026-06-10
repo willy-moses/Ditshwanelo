@@ -1100,7 +1100,12 @@ async function pushAllToSupabase() {
     const ls = document.getElementById('sb-last-sync');
     if (ls) { ls.textContent = '⬆ Pushed ' + new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }); ls.style.display = 'block'; }
   } catch(e) { setSbStatus('error','Push failed'); showToast('Push error: ' + e.message,'error'); }
-}
+  document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && sbClient && currentUser && !isOffline) {
+    await pullFromSupabase();
+  }
+});
+
 
 async function syncCaseToSupabase(c, mode) {
   if (!sbClient) return;
