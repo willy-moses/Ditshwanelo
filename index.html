@@ -931,6 +931,7 @@ document.querySelectorAll('.nav-item').forEach(function(item){
 window.addEventListener('resize', function(){ if(window.innerWidth > 768) closeSidebar(); });
 
 /* ── Service Worker ── */
+// Unregister all service workers to fix stuck cache
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('/sw.js')

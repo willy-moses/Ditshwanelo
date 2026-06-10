@@ -1,4 +1,11 @@
-
+// Force SW refresh on every load
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(reg => reg.unregister());
+  }).then(() => {
+    navigator.serviceWorker.register('/sw.js');
+  });
+}
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
@@ -332,6 +339,7 @@ function resetCreds() {
 }
 
 async function initAuth() {
+   await new Promise(resolve => setTimeout(resolve, 300)); // wait for SW
   const creds = loadSbCreds();
 
   if (!creds) {
@@ -1105,6 +1113,7 @@ async function pushAllToSupabase() {
     await pullFromSupabase();
   }
 });
+}
 
 
 async function syncCaseToSupabase(c, mode) {
