@@ -1,11 +1,4 @@
-// Force SW refresh on every load
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(reg => reg.unregister());
-  }).then(() => {
-    navigator.serviceWorker.register('/sw.js');
-  });
-}
+
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
@@ -1108,12 +1101,14 @@ async function pushAllToSupabase() {
     const ls = document.getElementById('sb-last-sync');
     if (ls) { ls.textContent = '⬆ Pushed ' + new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }); ls.style.display = 'block'; }
   } catch(e) { setSbStatus('error','Push failed'); showToast('Push error: ' + e.message,'error'); }
-  document.addEventListener('visibilitychange', async () => {
+}
+
+// ── Auto-refresh when app comes back into focus ──
+document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && sbClient && currentUser && !isOffline) {
     await pullFromSupabase();
   }
 });
-}
 
 
 async function syncCaseToSupabase(c, mode) {
