@@ -2,6 +2,7 @@
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
+const APP_VERSION = 'v5.0'; // change this one place only
 let cases = [];
 let auditLog = [];
 let editIdx = -1;
@@ -69,7 +70,89 @@ window.addEventListener('offline', () => {
   setOfflineMode(true);
   showToast('You are now offline — using cached data', '');
 });
+function subscribeGuidanceNotifications() {
+  if (!sbClient || !currentUser) {
+    console.warn('subscribeGuidanceNotifications: no client or user');
+    return;
+  }
 
+  // Ask for permission if not yet decided
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().then(perm => {
+      console.log('Notification permission:', perm);
+    });
+  }
+
+  console.log('Setting up guidance notifications for', currentUser.email);
+  console.log('Current notification permission:', 'Notification' in window ? Notification.permission : 'not supported');
+
+  // ── New comment listener ──
+  sbClient.channel('guidance-all-comments')
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'case_comments'
+    }, payload => {
+      console.log('New comment received:', payload);
+      const c = payload.new;
+
+      if (c.author_id === currentUser.id) {
+        console.log('Skipping — own message');
+        return;
+      }
+
+      // Mark unread in DB and refresh badges
+      markUnread(c.case_id);
+
+      // In-app toast
+      showToast('💬 New guidance message on case ' + (c.case_num || ''), 'success');
+
+      // Try Service Worker notification first (best for PWA)
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification('💬 New Guidance Message', {
+            body: 'Case ' + (c.case_num || '') + ': ' + (c.author_name || 'Someone') + ' sent a message.',
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            tag: 'guidance-' + c.case_id,
+            renotify: true,
+            data: { caseId: c.case_id }
+          });
+        }).catch(err => console.warn('SW notification failed:', err));
+
+      // Fallback: plain browser Notification
+      } else if ('Notification' in window && Notification.permission === 'granted') {
+        const n = new Notification('💬 New Guidance Message', {
+          body: 'Case ' + (c.case_num || '') + ': ' + (c.author_name || 'Someone') + ' sent a message.',
+          icon: '/icon-192.png',
+          tag: 'guidance-' + c.case_id,
+          renotify: true,
+        });
+        n.onclick = () => {
+          window.focus();
+          openGuidanceDirect(c.case_id);
+          n.close();
+        };
+      } else {
+        console.warn('Notifications not available. Permission:', Notification.permission);
+      }
+    })
+    .subscribe((status) => {
+      console.log('Guidance notification subscription status:', status);
+    });
+
+  // ── Sync unread state across devices in real time ──
+  sbClient.channel('guidance-unread-sync')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'guidance_unread',
+      filter: `user_id=eq.${currentUser.id}`
+    }, async () => {
+      await loadUnreadCounts();
+    })
+    .subscribe();
+}
 // ══════════════════════════════════════════════
 // SYNC ENGINE — Merge-based, never overwrites
 // ══════════════════════════════════════════════
@@ -455,6 +538,12 @@ async function onAuthSuccess(user) {
   saveProfile({ id: user.id, email: user.email, name: currentUserName, role: currentUserRole });
 
   hideAuthScreen();
+
+  // Request notification permission right after login
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+
   updateUserChip();
   document.getElementById('nav-coordinator').style.display = ['coordinator','admin'].includes(currentUserRole) ? 'flex' : 'none';
   document.getElementById('nav-admin').style.display       = currentUserRole === 'admin' ? 'flex' : 'none';
@@ -463,8 +552,11 @@ async function onAuthSuccess(user) {
   updateSbUI();
   await loadAllProfiles();
   await pullFromSupabase();
+  await loadUnreadCounts(); // ← add this
+  subscribeGuidanceNotifications();
   await loadAuditLog();
   await autoConnectExcel();
+  
   updateDbUI();
 
   if (!loadPin()) {
@@ -482,7 +574,6 @@ async function onAuthSuccess(user) {
     }, 800);
   }
 }
-
 async function doLogout() {
   if (sbClient) await sbClient.auth.signOut();
   currentUser = null; currentUserName = ''; currentUserRole = 'officer';
@@ -620,9 +711,12 @@ function renderTable() {
       <td>${esc(c.type)}</td>
       <td><span class="badge badge-${c.status.toLowerCase()}">${c.status}</span></td>
       <td><span style="font-size:11.5px;color:var(--text-muted)">${esc(c.updatedByName || c.createdByName || '—')}</span></td>
-      <td><div style="display:flex;gap:4px">
+       <td><div style="display:flex;gap:4px">
         <button class="btn btn-outline btn-sm" onclick="viewCase(${i})">👁</button>
         <button class="btn btn-outline btn-sm" onclick="editCase(${i})">✎</button>
+<button class="btn btn-outline btn-sm" onclick="openGuidanceDirect('${c._id}')" title="Guidance" style="position:relative">
+          💬${getUnreadCount(c._id) > 0 ? ` <span style="position:absolute;top:-5px;right:-5px;background:#d9534f;color:#fff;border-radius:50%;font-size:9px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-weight:700;padding:0 3px">${getUnreadCount(c._id)}</span>` : ''}${c.needsGuidance ? ' 🆘' : ''}
+        </button>
         <button class="btn btn-danger btn-sm"  onclick="deleteCase(${i})">✕</button>
       </div></td></tr>`);
   });
@@ -706,9 +800,12 @@ function renderCoordTable(village, filteredCases) {
       <td><span class="badge badge-${c.status.toLowerCase()}">${c.status}</span></td>
       <td style="font-size:11.5px;color:var(--text-muted)">${esc(c.createdByName || '—')}</td>
       <td><div style="display:flex;gap:4px">
-        <button class="btn btn-outline btn-sm" onclick="viewCase(${idx})">👁</button>
+         <button class="btn btn-outline btn-sm" onclick="viewCase(${idx})">👁</button>
         <button class="btn btn-outline btn-sm" onclick="editCase(${idx})">✎</button>
-      </div></td></tr>`);
+        <button class="btn btn-outline btn-sm" onclick="openGuidanceDirect('${c._id}')" title="Guidance" style="position:relative">
+          💬${getUnreadCount(c._id) > 0 ? ` <span style="position:absolute;top:-5px;right:-5px;background:#d9534f;color:#fff;border-radius:50%;font-size:9px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-weight:700;padding:0 3px">${getUnreadCount(c._id)}</span>` : ''}${c.needsGuidance ? ' 🆘' : ''}
+        </button>
+      </tr>`);
   });
 }
 
@@ -866,10 +963,15 @@ function deleteCase(idx) {
 // VIEW MODAL
 // ══════════════════════════════════════════════
 function viewCase(idx) {
-  const c = cases[idx];
+   const c = cases[idx];
+  window.currentViewCaseId = c._id || null;
   document.getElementById('view-case-num').textContent  = c.num;
   document.getElementById('view-case-name').textContent = c.name;
   document.getElementById('view-edit-btn').onclick = () => editCase(idx);
+
+
+
+
   const fields = [
     { l:'Case Number',           v: c.num },
     { l:'Full Names',            v: c.name },
@@ -906,6 +1008,7 @@ function updateAll() {
   if (currentPage === 'cases')       renderTable();
   if (currentPage === 'coordinator') renderCoordinator();
   if (currentPage === 'dashboard')   { renderRecent(); updateStats(); }
+  updateTopbarMsgBadge();
 }
 
 // ══════════════════════════════════════════════
@@ -926,6 +1029,16 @@ function saveSbCreds() {
   }
 }
 
+function openGuidanceInbox() {
+  if (unreadCaseIds.size === 0) {
+    showToast('No unread guidance messages', '');
+    return;
+  }
+  // Open each unread case in its own tab
+  [...unreadCaseIds].forEach(caseId => {
+    openGuidanceDirect(caseId);
+  });
+}
 function loadSbCreds() {
   try {
     const r = localStorage.getItem(SB_CREDS_KEY);
@@ -1041,10 +1154,16 @@ function rowToCase(r) {
     createdByName:  r.created_by_name || '',
     updatedAt:      r.updated_at,
     updatedBy:      r.updated_by,
-    updatedByName:  r.updated_by_name || ''
+     updatedByName:   r.updated_by_name || '',
+    needsGuidance:   r.needs_guidance  || false
   };
 }
-
+async function openGuidanceDirect(caseId) {
+  if (!caseId) { showToast('This case has not synced yet — save it online first.', 'error'); return; }
+  await markRead(caseId); // ← now writes to DB
+  updateAll();
+  window.open('case-guidance.html?case=' + caseId, '_blank');
+}
 async function pullFromSupabase() {
   if (!sbClient || !currentUser) return;
   setSbStatus('syncing','Pulling...');
@@ -1741,6 +1860,21 @@ async function changeUserRole(userId, newRole, selectEl) {
   } catch(e) { showToast('Error: ' + e.message,'error'); selectEl.value = original; }
 }
 
+
+// ── TOPBAR MESSAGE BADGE ──
+function updateTopbarMsgBadge() {
+  const count = unreadCaseIds.size;
+  const btn   = document.getElementById('topbar-msg-btn');
+  const badge = document.getElementById('topbar-msg-badge');
+  if (!btn || !badge) return;
+  btn.style.display = 'inline-flex';
+  if (count > 0) {
+    badge.textContent   = count;
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
 function openEditUserModal(userId) {
   const p = allProfiles.find(x => x.id === userId); if (!p) return;
   editingUserId = userId;
@@ -1867,14 +2001,37 @@ function aiDigest() {
     byType[c.type||'Unknown']       = (byType[c.type||'Unknown']||0)+1;
     byVillage[c.village||'Unknown'] = (byVillage[c.village||'Unknown']||0)+1;
   });
-  return [
+
+  const summary = [
     `Total cases: ${cases.length}`,
-    `Status: ${JSON.stringify(byStatus)}`,
-    `Types: ${JSON.stringify(byType)}`,
+    `Status breakdown: ${JSON.stringify(byStatus)}`,
+    `Case types: ${JSON.stringify(byType)}`,
     `Villages (${Object.keys(byVillage).length}): ${JSON.stringify(byVillage)}`,
     '',
-    ...cases.map(c => `[${c.num||'?'}] ${c.name||'?'} | ${c.type||'?'} | ${c.status||'?'} | ${c.village||'?'}`)
+    '=== FULL CASE DETAILS ===',
+    ''
   ].join('\n');
+
+  const fullCases = cases.map(c => [
+    `Case: ${c.num||'?'}`,
+    `Name: ${c.name||'?'}`,
+    `ID Number: ${c.idNumber||'—'}`,
+    `DOB: ${c.dob||'—'}`,
+    `Tribe: ${c.tribe||'—'}`,
+    `Village: ${c.village||'—'}`,
+    `Address: ${c.address||'—'}`,
+    `Contacts: ${c.contacts||'—'}`,
+    `Type: ${c.type||'—'}`,
+    `Status: ${c.status||'—'}`,
+    `Date of Case: ${c.caseDate||'—'}`,
+    `Employment Status: ${c.employStatus||'—'}`,
+    `Officer: ${c.createdByName||'—'}`,
+    `Description: ${c.desc||'—'}`,
+    `Assistance Given: ${c.assist||'—'}`,
+    '---'
+  ].join('\n')).join('\n');
+
+  return summary + fullCases;
 }
 
 function aiCaseDetail(c) {
@@ -2045,7 +2202,72 @@ if (savedCreds) {
   document.getElementById('sb-url').value = savedCreds.url;
   document.getElementById('sb-key').value = savedCreds.key;
 }
+// ══════════════════════════════════════════════
+// UNREAD GUIDANCE NOTIFICATIONS
+// ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+// UNREAD GUIDANCE — database-backed
+// ══════════════════════════════════════════════
 
+// Called when a new comment arrives for a case we didn't write
+async function markUnread(caseId) {
+  if (!sbClient || !currentUser) {
+    console.warn('markUnread: no client or user');
+    return;
+  }
+  console.log('markUnread called for caseId:', caseId);
+  console.log('currentUser.id:', currentUser.id);
+
+  const { data, error } = await sbClient.from('guidance_unread').upsert(
+    { case_id: caseId, user_id: currentUser.id, unread: true, updated_at: new Date().toISOString() },
+    { onConflict: 'case_id,user_id' }
+  ).select();
+
+  console.log('markUnread result — data:', data, 'error:', error);
+  await loadUnreadCounts();
+}
+
+// Called when user opens the guidance thread for a case
+async function markRead(caseId) {
+  if (!sbClient || !currentUser) return;
+  await sbClient.from('guidance_unread')
+    .update({ unread: false, updated_at: new Date().toISOString() })
+    .eq('case_id', caseId)
+    .eq('user_id', currentUser.id);
+  await loadUnreadCounts(); // refresh badges
+}
+
+// In-memory cache of unread case IDs for fast badge rendering
+let unreadCaseIds = new Set();
+
+async function loadUnreadCounts() {
+  if (!sbClient || !currentUser) {
+    console.warn('loadUnreadCounts: no client or user');
+    return;
+  }
+
+  try {
+    const { data, error } = await sbClient
+      .from('guidance_unread')
+      .select('case_id')
+      .eq('user_id', currentUser.id)
+      .eq('unread', true);
+
+    if (error) throw error;
+    unreadCaseIds = new Set((data || []).map(r => r.case_id));
+    updateAll();
+    updateTopbarMsgBadge(); // ← add this
+  } catch(e) {
+    console.warn('loadUnreadCounts error:', e.message);
+  }
+}
+
+function getUnreadCount(caseId) {
+  return unreadCaseIds.has(caseId) ? 1 : 0;
+}
+
+
+// v3.1
 initAuth();
 document.getElementById('logo-auth').src    = LOGO_BASE64;
 document.getElementById('logo-sidebar').src = LOGO_BASE64;

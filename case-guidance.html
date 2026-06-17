@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guidance &amp; Comments — Ditshwanelo</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --navy:#0f2540;--navy-mid:#1a3a5c;
+  --gold:#c8923a;--gold-light:#e8b060;
+  --cream:#faf7f1;--white:#ffffff;
+  --border:#e4e0d8;--border-light:#eee9e0;
+  --text:#22303f;--text-muted:#6b7686;--text-light:#9aa3ad;
+  --success:#1a7a4a;--success-bg:#e3f5ea;
+  --danger:#a4302a;--danger-bg:#fbe9e7;
+  --warn:#8a6414;--warn-bg:#fdf2d8;
+  --radius:10px;--radius-lg:14px;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);min-height:100vh}
+h1,h2,h3{font-family:'DM Serif Display',serif;margin:0}
+a{color:var(--navy)}
+.bar{background:var(--navy);color:#fff;padding:16px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.bar a.back{color:rgba(255,255,255,.7);text-decoration:none;font-size:13px;display:flex;align-items:center;gap:5px}
+.bar a.back:hover{color:#fff}
+.bar .case-title{font-size:18px;flex:1}
+.bar .case-sub{font-size:12px;color:rgba(255,255,255,.55);margin-top:2px;font-family:'DM Sans',sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:20px 16px 100px}
+.card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:16px;overflow:hidden}
+.card-head{padding:14px 18px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.card-body{padding:18px}
+.badge-flag{display:inline-flex;align-items:center;gap:6px;background:var(--warn-bg);color:var(--warn);border:1px solid #f0d890;padding:5px 12px;border-radius:20px;font-size:12.5px;font-weight:600}
+.badge-ok{display:inline-flex;align-items:center;gap:6px;background:var(--success-bg);color:var(--success);border:1px solid #bfe6cc;padding:5px 12px;border-radius:20px;font-size:12.5px;font-weight:600}
+.btn{font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;border-radius:9px;padding:9px 16px;cursor:pointer;border:1.5px solid transparent;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-outline{background:transparent;border-color:var(--border);color:var(--text)}
+.btn-danger-outline{background:transparent;border-color:#e3b3ae;color:var(--danger)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;font-size:13px}
+.meta-grid .label{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-light);margin-bottom:2px}
+.thread{display:flex;flex-direction:column;gap:12px;max-height:52vh;overflow-y:auto;padding:4px 2px}
+.msg{max-width:80%;padding:10px 13px;border-radius:12px;font-size:13.5px;line-height:1.5}
+.msg .who{font-size:11px;font-weight:600;margin-bottom:3px;display:flex;gap:6px;align-items:center}
+.msg .when{font-size:10.5px;color:var(--text-light);font-weight:400}
+.msg.mine{align-self:flex-end;background:var(--navy);color:#fff;border-bottom-right-radius:3px}
+.msg.mine .who{color:var(--gold-light)}
+.msg.mine .when{color:rgba(255,255,255,.55)}
+.msg.theirs{align-self:flex-start;background:var(--cream);border:1px solid var(--border-light);border-bottom-left-radius:3px}
+.msg.theirs .who{color:var(--navy)}
+.msg.system{align-self:center;background:transparent;color:var(--text-muted);font-size:12px;font-style:italic;text-align:center;padding:4px 10px}
+.role-tag{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:8px;background:rgba(255,255,255,.18)}
+.msg.theirs .role-tag{background:var(--border-light);color:var(--text-muted)}
+.compose{display:flex;gap:8px;padding:14px 18px;border-top:1px solid var(--border-light);background:var(--white)}
+.compose textarea{flex:1;resize:none;font-family:'DM Sans',sans-serif;font-size:13.5px;padding:10px 13px;border:1.5px solid var(--border);border-radius:9px;background:var(--cream);outline:none}
+.compose textarea:focus{border-color:var(--navy);background:#fff}
+.empty,.center-note{text-align:center;color:var(--text-muted);font-size:13px;padding:30px 10px}
+.center-note a{text-decoration:underline}
+.loading{display:flex;justify-content:center;padding:60px 0;color:var(--text-muted);font-size:13px}
+.spin{width:18px;height:18px;border:2.5px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:sp .7s linear infinite;margin-right:8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+#app{display:none}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <a class="back" href="index.html">← Back to case register</a>
+</div>
+
+<div class="wrap">
+  <div id="loading-state" class="loading"><span class="spin"></span> Loading case…</div>
+
+  <div id="signedout-state" class="card" style="display:none">
+    <div class="card-body center-note">
+      You're not signed in. Please <a href="index.html">sign in on the main case register</a>, then return to this page.
+    </div>
+  </div>
+
+  <div id="noaccess-state" class="card" style="display:none">
+    
+    <div class="card-body center-note">
+      You don't have access to the guidance thread for this case.
+      <div id="noaccess-detail" style="margin-top:10px;font-size:11.5px;color:var(--text-light)"></div>
+    </div>
+  </div>
+
+  <div id="app">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2 id="case-title" style="font-size:17px">—</h2>
+          <div class="case-sub" id="case-sub" style="color:var(--text-muted)">—</div>
+        </div>
+        <span id="flag-badge"></span>
+      </div>
+      <div class="card-body">
+        <div class="meta-grid">
+          <div><div class="label">Village</div><div id="meta-village">—</div></div>
+          <div><div class="label">Type</div><div id="meta-type">—</div></div>
+          <div><div class="label">Status</div><div id="meta-status">—</div></div>
+        </div>
+        <div style="margin-top:14px" id="flag-action"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3 style="font-size:15px">💬 Guidance thread</h3><span id="thread-count" style="font-size:12px;color:var(--text-muted)"></span></div>
+      <div class="card-body" style="padding-bottom:0">
+        <div class="thread" id="thread"></div>
+      </div>
+      <div class="compose" id="compose">
+        <textarea id="msg-input" rows="2" placeholder="Write a comment…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();postComment();}"></textarea>
+        <button class="btn btn-gold" onclick="postComment()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════
+   Connects to the SAME Supabase project as the
+   main app. If the user is already signed in
+   over there, the session is picked up here too.
+════════════════════════════════════════ */
+const SUPABASE_URL = "https://rsfpqgctxuiawcoglede.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzZnBxZ2N0eHVpYXdjb2dsZWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwOTg0OTUsImV4cCI6MjA4OTY3NDQ5NX0.CIYKlTRCylwVIup217CfYyGT8Sp_62IpqoXc1sQEDRM";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const params = new URLSearchParams(location.search);
+const CASE_ID = params.get('case');
+
+let me = null, myProfile = null, caseRow = null, hasAccess = false, seenIds = new Set();
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function show(id){['loading-state','signedout-state','noaccess-state','app'].forEach(x=>document.getElementById(x).style.display = x===id ? (id==='app'?'block':'flex') : 'none');}
+
+async function init(){
+  if(!CASE_ID){ document.getElementById('loading-state').innerHTML = '<div class="center-note">No case specified.</div>'; return; }
+
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ show('signedout-state'); return; }
+  me = session.user;
+
+  const { data: profile, error: profileError } = await sb.from('user_profiles').select('*').eq('id', me.id).single();
+  if(profileError){
+    console.warn('user_profiles lookup failed for', me.id, '—', profileError.message);
+  }
+  myProfile = profile || { role:'officer', full_name: me.email };
+
+  const { data: c, error } = await sb.from('cases').select('*').eq('id', CASE_ID).single();
+  if(error || !c){ document.getElementById('loading-state').innerHTML = '<div class="center-note">Case not found.</div>'; return; }
+  caseRow = c;
+
+  const role = myProfile.role || 'officer';
+  const ownsCase = caseRow.created_by === me.id || caseRow.updated_by === me.id ||
+    (myProfile.settlement && caseRow.village && myProfile.settlement.toLowerCase() === caseRow.village.toLowerCase());
+  hasAccess = role === 'admin' || role === 'coordinator' || (role === 'officer' && ownsCase);
+
+  if(!hasAccess){
+    document.getElementById('noaccess-detail').textContent =
+      'Detected role: ' + role + (profile ? '' : ' (no user_profiles row found for this account — check Supabase)') +
+      '. Signed in as: ' + me.email + '.';
+    show('noaccess-state');
+    return;
+  }
+
+  show('app');
+  renderCaseHeader();
+  await loadComments();
+  subscribeRealtime();
+}
+
+function renderCaseHeader(){
+  document.getElementById('case-title').textContent = (caseRow.num||'—') + ' · ' + (caseRow.name||'—');
+  document.getElementById('case-sub').textContent = 'ID: ' + (caseRow.id_number||'—');
+  document.getElementById('meta-village').textContent = caseRow.village || '—';
+  document.getElementById('meta-type').textContent = caseRow.type || '—';
+  document.getElementById('meta-status').textContent = caseRow.status || '—';
+
+  document.getElementById('flag-badge').innerHTML = caseRow.needs_guidance
+    ? '<span class="badge-flag">🆘 Needs Guidance</span>'
+    : '<span class="badge-ok">✅ No open request</span>';
+
+  document.getElementById('flag-action').innerHTML = caseRow.needs_guidance
+    ? '<button class="btn btn-outline" onclick="toggleFlag(false)">✅ Mark resolved</button>'
+    : '<button class="btn btn-danger-outline" onclick="toggleFlag(true)">🆘 Request guidance</button>';
+}
+
+async function toggleFlag(flagOn){
+  const { error } = await sb.from('cases').update({
+    needs_guidance: flagOn,
+    guidance_flagged_at: flagOn ? new Date().toISOString() : null,
+    guidance_flagged_by: flagOn ? (myProfile.full_name || me.email) : null
+  }).eq('id', CASE_ID);
+  if(error){ alert('Could not update: ' + error.message); return; }
+  caseRow.needs_guidance = flagOn;
+  renderCaseHeader();
+  await sb.from('case_comments').insert({
+    case_id: CASE_ID, case_num: caseRow.num,
+    author_id: me.id, author_name: myProfile.full_name || me.email, author_role: myProfile.role || 'officer',
+    body: flagOn ? 'flagged this case as needing guidance.' : 'marked the guidance request as resolved.',
+    is_system: true
+  });
+}
+
+async function loadComments(){
+  const { data, error } = await sb.from('case_comments').select('*').eq('case_id', CASE_ID).order('created_at', { ascending:true });
+  if(error){ document.getElementById('thread').innerHTML = '<div class="empty">Could not load comments.</div>'; return; }
+  document.getElementById('thread').innerHTML = '';
+  (data||[]).forEach(appendComment);
+  if(!data || !data.length) document.getElementById('thread').innerHTML = '<div class="empty">No comments yet — start the conversation below.</div>';
+  scrollThread();
+}
+
+function appendComment(c){
+  if(seenIds.has(c.id)) return;
+  seenIds.add(c.id);
+  const thread = document.getElementById('thread');
+  if(thread.querySelector('.empty')) thread.innerHTML = '';
+  const when = new Date(c.created_at).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+  const div = document.createElement('div');
+  if(c.is_system){
+    div.className = 'msg system';
+    div.textContent = (c.author_name||'Someone') + ' ' + c.body + ' · ' + when;
+  } else {
+    const mine = c.author_id === me.id;
+    div.className = 'msg ' + (mine ? 'mine' : 'theirs');
+    div.innerHTML = '<div class="who">' + esc(c.author_name) + ' <span class="role-tag">' + esc(c.author_role||'') + '</span><span class="when">' + when + '</span></div>' + esc(c.body);
+  }
+  thread.appendChild(div);
+  document.getElementById('thread-count').textContent = seenIds.size + (seenIds.size===1?' message':' messages');
+}
+
+function scrollThread(){
+  const t = document.getElementById('thread');
+  t.scrollTop = t.scrollHeight;
+}
+
+async function postComment(){
+  const input = document.getElementById('msg-input');
+  const body = input.value.trim();
+  if(!body) return;
+  input.value = '';
+  const { data, error } = await sb.from('case_comments').insert({
+    case_id: CASE_ID, case_num: caseRow.num,
+    author_id: me.id, author_name: myProfile.full_name || me.email, author_role: myProfile.role || 'officer',
+    body, is_system:false
+  }).select().single();
+  if(error){ alert('Could not send: ' + error.message); input.value = body; return; }
+  appendComment(data);
+  scrollThread();
+}
+
+function subscribeRealtime(){
+  sb.channel('case-comments-' + CASE_ID)
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'case_comments', filter:'case_id=eq.' + CASE_ID }, payload => {
+      appendComment(payload.new);
+      scrollThread();
+    })
+    .subscribe();
+
+  sb.channel('case-flag-' + CASE_ID)
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'cases', filter:'id=eq.' + CASE_ID }, payload => {
+      caseRow.needs_guidance = payload.new.needs_guidance;
+      renderCaseHeader();
+    })
+    .subscribe();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -323,7 +323,7 @@
       <div class="nav-item" onclick="exportToPDF()"><span class="nav-icon">🖨</span> Export PDF</div>
       <div class="nav-item" onclick="showChangePinModal()"><span class="nav-icon">🔑</span> Change PIN</div>
     </nav>
-    <div class="sidebar-footer">v3.0 · Ditshwanelo Case Register</div>
+    <div class="sidebar-footer"  id="app-version-footer">v3.0 · Ditshwanelo Case Register</div>
   </aside>
 
   <div class="main">
@@ -332,16 +332,22 @@
         <button id="menu-btn" onclick="toggleSidebar()" aria-label="Toggle menu">☰</button>
         <span class="topbar-title" id="page-title">Dashboard</span>
       </div>
-      <div class="topbar-actions">
-        <span style="display:flex;align-items:center;font-size:12px;color:var(--text-muted);margin-right:2px">
-          <span class="sb-dot" id="topbar-sb-dot"></span>
-          <span id="topbar-sb-label" style="display:none">Offline</span>
-          <span class="sync-spinner" id="topbar-spinner"></span>
-        </span>
-        <button class="btn btn-outline btn-sm" onclick="exportFallback()">📥</button>
-        <button class="btn btn-outline btn-sm" onclick="exportToPDF()">🖨</button>
-        <button class="btn btn-gold btn-sm" onclick="openAddModal()">+ Case</button>
-      </div>
+  <div class="topbar-actions">
+  <!-- ADD THIS -->
+  <button class="btn btn-outline btn-sm" onclick="openGuidanceInbox()" id="topbar-msg-btn" title="Unread guidance messages" style="position:relative;display:none">
+  💬
+  <span id="topbar-msg-badge" style="position:absolute;top:-6px;right:-6px;background:#d9534f;color:#fff;border-radius:50%;font-size:9px;min-width:16px;height:16px;display:none;align-items:center;justify-content:center;font-weight:700;padding:0 3px"></span>
+</button>
+  <!-- EXISTING -->
+  <span style="display:flex;align-items:center;font-size:12px;color:var(--text-muted);margin-right:2px">
+    <span class="sb-dot" id="topbar-sb-dot"></span>
+    <span id="topbar-sb-label" style="display:none">Offline</span>
+    <span class="sync-spinner" id="topbar-spinner"></span>
+  </span>
+  <button class="btn btn-outline btn-sm" onclick="exportFallback()">📥</button>
+  <button class="btn btn-outline btn-sm" onclick="exportToPDF()">🖨</button>
+  <button class="btn btn-gold btn-sm" onclick="openAddModal()">+ Case</button>
+</div>
     </div>
 
     <div class="db-status-bar" id="db-status">Not connected to Supabase. Go to Database tab to connect.</div>
@@ -861,6 +867,7 @@ create policy "Auth users full access on audit_log" on audit_log for all to auth
     <div class="modal-foot">
       <button class="btn btn-outline" onclick="closeViewModal()">Close</button>
       <button class="btn btn-primary" id="view-edit-btn">✎ Edit Case</button>
+      <button class="btn btn-outline" onclick="openCaseGuidance()">💬 Guidance</button>
     </div>
   </div>
 </div>
@@ -933,18 +940,35 @@ window.addEventListener('resize', function(){ if(window.innerWidth > 768) closeS
 /* ── Service Worker ── */
 // Unregister all service workers to fix stuck cache
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js')
-      .then(function(reg) { 
-        console.log('SW registered');
-        reg.update(); // force check for new SW on every load
-      })
-      .catch(function(e) { console.log('SW error:', e); });
+  // Register — never unregister
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    console.log('SW registered', reg.scope);
 
-    // Also update any already-running service workers
-    navigator.serviceWorker.getRegistrations().then(registrations => {
-      registrations.forEach(reg => reg.update());
+    // When a new SW takes over, reload once so all files are consistent
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data?.type === 'SW_UPDATED') {
+        // Only auto-reload if the user isn't mid-form
+        const hasUnsaved = document.querySelector('.modal-overlay.active') ||
+                           document.querySelector('#case-modal[style*="flex"]');
+        if (!hasUnsaved) {
+          window.location.reload();
+        }
+      }
     });
+  }).catch(err => console.warn('SW failed:', err));
+
+  // Fix mobile "dead buttons" after coming back from background:
+  // If the page was restored from bfcache (back-forward cache),
+  // event listeners may be stale — force a clean reload
+  window.addEventListener('pageshow', e => {
+    if (e.persisted) {
+      window.location.reload();
+    }
+  });
+
+  // Detect going offline then online — re-validate the page isn't stale
+  window.addEventListener('online', () => {
+    navigator.serviceWorker.ready.then(reg => reg.update());
   });
 }
 
@@ -1329,10 +1353,25 @@ function rvDelReceipt(id){
   rvReceipts=rvReceipts.filter(function(r){return r.id!==id;});
   rvScheduleAutoSave();rvToast('Receipt deleted.');
 }
-
+// Sync footer version with SW version
+if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+  navigator.serviceWorker.controller.postMessage({ type: 'GET_VERSION' });
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data?.type === 'VERSION') {
+      const footer = document.getElementById('app-version-footer');
+      if (footer) footer.textContent = e.data.version + ' · Ditshwanelo Case Register';
+    }
+  });
+}
+function openCaseGuidance(){
+  if(!window.currentViewCaseId){ alert('Open a case first.'); return; }
+  window.open('case-guidance.html?case=' + window.currentViewCaseId, '_blank');
+}
 /* initialise on page load */
 rvInit();
 rvRenderTable();
+
+
 </script>
 </body>
 </html>
