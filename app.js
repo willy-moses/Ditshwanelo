@@ -860,16 +860,22 @@ function openAddModal() {
   editIdx = -1;
   document.getElementById('modal-title').textContent = 'Add New Case';
   document.getElementById('modal-sub').textContent   = 'Fill in the details below';
-  ['f-num','f-name','f-idnum','f-tribe','f-village','f-address','f-contacts','f-desc','f-assist'].forEach(id => document.getElementById(id).value = '');
+  ['f-num','f-name','f-idnum','f-tribe','f-village','f-address','f-contacts','f-desc','f-assist','f-type-custom'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-dob').value    = '';
   document.getElementById('f-case-date').value     = '';
   document.getElementById('f-employ-status').value = '';
   document.getElementById('f-num').value    = autoNum();
   document.getElementById('f-type').value   = 'Labour Dispute';
+  document.getElementById('f-type-custom-wrap').style.display = 'none';
   document.getElementById('f-status').value = 'Ongoing';
   document.getElementById('case-modal').classList.add('open');
 }
 
+function toggleCustomCaseType() {
+  const sel = document.getElementById('f-type');
+  const wrap = document.getElementById('f-type-custom-wrap');
+  wrap.style.display = sel.value === '__custom__' ? 'block' : 'none';
+}
 function autoNum() {
   const nums = cases.map(c => { const m = c.num.match(/(\d+)$/); return m ? parseInt(m[1]) : 0; });
   return 'G-' + (Math.max(0, ...nums) + 1).toString().padStart(3,'0');
@@ -882,14 +888,25 @@ function editCase(idx) {
   document.getElementById('f-num').value      = c.num;
   document.getElementById('f-name').value     = c.name;
   document.getElementById('f-case-date').value      = c.caseDate     || '';
-document.getElementById('f-employ-status').value  = c.employStatus || '';
+  document.getElementById('f-employ-status').value  = c.employStatus || '';
   document.getElementById('f-idnum').value    = c.idNumber  || '';
   document.getElementById('f-dob').value      = c.dob       || '';
   document.getElementById('f-tribe').value    = c.tribe     || '';
   document.getElementById('f-village').value  = c.village   || '';
   document.getElementById('f-address').value  = c.address   || '';
   document.getElementById('f-contacts').value = c.contacts  || '';
-  document.getElementById('f-type').value     = c.type      || 'Labour Dispute';
+
+  const knownTypes = ['Labour Dispute','Land Dispute','Family Matter','Criminal','Child Maintanance','Dept Disputes','Unfair Work Treatment','Civil','Inheritence Despute'];
+  if (c.type && !knownTypes.includes(c.type)) {
+    document.getElementById('f-type').value = '__custom__';
+    document.getElementById('f-type-custom').value = c.type;
+    document.getElementById('f-type-custom-wrap').style.display = 'block';
+  } else {
+    document.getElementById('f-type').value = c.type || 'Labour Dispute';
+    document.getElementById('f-type-custom').value = '';
+    document.getElementById('f-type-custom-wrap').style.display = 'none';
+  }
+
   document.getElementById('f-desc').value     = c.desc      || '';
   document.getElementById('f-assist').value   = c.assist    || '';
   document.getElementById('f-status').value   = c.status    || 'Ongoing';
@@ -902,6 +919,13 @@ function closeModal() { document.getElementById('case-modal').classList.remove('
 async function saveCase() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { showToast('Please enter the full names.','error'); return; }
+
+  let type = document.getElementById('f-type').value;
+  if (type === '__custom__') {
+    type = document.getElementById('f-type-custom').value.trim();
+    if (!type) { showToast('Please specify the custom case type.','error'); return; }
+  }
+
   const now   = new Date().toISOString();
   const entry = {
     num:      document.getElementById('f-num').value.trim() || autoNum(),
@@ -909,12 +933,12 @@ async function saveCase() {
     idNumber: document.getElementById('f-idnum').value.trim(),
     dob:      document.getElementById('f-dob').value || null,
     caseDate:     document.getElementById('f-case-date').value || null,
-employStatus: document.getElementById('f-employ-status').value.trim(),
+    employStatus: document.getElementById('f-employ-status').value.trim(),
     tribe:    document.getElementById('f-tribe').value.trim(),
     village:  document.getElementById('f-village').value.trim(),
     address:  document.getElementById('f-address').value.trim(),
     contacts: document.getElementById('f-contacts').value.trim(),
-    type:     document.getElementById('f-type').value,
+    type,
     desc:     document.getElementById('f-desc').value.trim(),
     assist:   document.getElementById('f-assist').value.trim(),
     status:   document.getElementById('f-status').value,
@@ -1554,228 +1578,82 @@ async function clearAllData() {
   cases = []; updateAll(); saveToDatabase(); showToast('Local data cleared','error');
 }
 
-// ══════════════════════════════════════════════
-// PDF EXPORT
-// ══════════════════════════════════════════════
-function exportToPDF() {
-  // Deduplicate by case number
-  const seen = new Set();
-  const uniqueCases = cases.filter(c => {
-    if (seen.has(c.num)) return false;
-    seen.add(c.num);
-    return true;
-  });
 
-  if (uniqueCases.length === 0) { showToast('No cases to export', 'error'); return; }
-
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-  const pw  = doc.internal.pageSize.getWidth();
-  const ph  = doc.internal.pageSize.getHeight();
-  const MARGIN  = 10;
-  const cardW   = pw - MARGIN * 2;
-
-  const NAVY  = [15, 37, 64];
-  const WHITE = [255, 255, 255];
-  const BLACK = [0, 0, 0];
-  const LIGHT = [240, 240, 240];
-  const CARD_GAP = 5;
-
-  // Fixed row heights (rows 1 & 2)
-  const headerH     = 6;
-  const valueH      = 12;
-  const row2HeaderH = 6;
-  const row2ValueH  = 14;
-  const row3HeaderH = 6;
-  const MIN_ROW3_VALUE_H = 14;
-
-  let y = MARGIN;
-
-  // ── Helpers ──────────────────────────────────────────────
-
-  function getLineCount(text, maxW, fontSize) {
-    if (!text) return 1;
-    doc.setFontSize(fontSize);
-    return doc.splitTextToSize(String(text), maxW - 4).length;
-  }
-
-  function computeRow3ValueH(c) {
-    const halfW    = cardW / 2;
-    const lineH    = 7 * 0.45;
-    const padding  = 5;
-    const descLines  = getLineCount(c.desc,   halfW, 7);
-    const assistLines = getLineCount(c.assist, halfW, 7);
-    const needed = Math.max(descLines, assistLines) * lineH + padding;
-    return Math.max(MIN_ROW3_VALUE_H, needed);
-  }
-
-  function computeCardHeight(c) {
-    return headerH + valueH + row2HeaderH + row2ValueH + row3HeaderH + computeRow3ValueH(c);
-  }
-
-  function drawPageHeader() {
-    doc.setFillColor(...NAVY);
-    doc.rect(MARGIN, y, cardW, 8, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(...WHITE);
-    doc.text('DITSHWANELO BOTSWANA — CASE REGISTER', pw / 2, y + 5.5, { align: 'center' });
-    y += 11;
-  }
-
-  function drawFooter() {
-    const total = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= total; i++) {
-      doc.setPage(i);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(120, 120, 120);
-      doc.text(
-        'Ditshwanelo Botswana · Confidential · Generated ' + new Date().toLocaleDateString('en-GB'),
-        MARGIN, ph - 4
-      );
-      doc.text('Page ' + i + ' of ' + total, pw - MARGIN, ph - 4, { align: 'right' });
-    }
-  }
-
-  function checkNewPage(neededH) {
-    if (y + neededH > ph - 14) {
-      doc.addPage();
-      y = MARGIN;
-      drawPageHeader();
-    }
-  }
-
-  function drawCell(x, cellY, w, h, text, opts = {}) {
-    doc.setDrawColor(...BLACK);
-    doc.setLineWidth(0.3);
-
-    if (opts.header) {
-      doc.setFillColor(...LIGHT);
-      doc.rect(x, cellY, w, h, 'FD');
-    } else {
-      doc.rect(x, cellY, w, h, 'S');
-    }
-
-    if (text === null || text === undefined || text === '') return;
-
-    const pad      = 2;
-    const fontSize = opts.fontSize || 7;
-    doc.setFont('helvetica', opts.bold || opts.header ? 'bold' : 'normal');
-    doc.setFontSize(fontSize);
-    doc.setTextColor(...BLACK);
-
-    const maxW      = w - pad * 2;
-    const lines     = doc.splitTextToSize(String(text), maxW);
-    const lineH     = fontSize * 0.45;
-    const totalTextH = lines.length * lineH;
-
-    // Top-align text in tall cells, centre in short ones
-    const textY = h > 16
-      ? cellY + pad + lineH
-      : cellY + (h - totalTextH) / 2 + lineH * 0.85;
-
-    doc.text(lines, x + pad, textY);
-  }
-
-  // ── Draw one case card ────────────────────────────────────
-
-  function drawCaseCard(c, startY) {
-    let cx;
-    const row3ValueH = computeRow3ValueH(c);
-
-    // ── ROW 1: headers ──
-    const cols1 = (() => {
-      const raw   = [22, 36, 22, 20, 22, 28, 28, 22];
-      const total = raw.reduce((a, b) => a + b, 0);
-      const scale = cardW / total;
-      return raw.map(w => parseFloat((w * scale).toFixed(2)));
-    })();
-
-    const headers1 = ['CASE NO.', 'FULL NAMES', 'ID NO.', 'DOB', 'DATE OF CASE', 'VILLAGE', 'TYPE', 'STATUS'];
-    const vals1    = [
-      c.num       || '',
-      c.name      || '',
-      c.idNumber  || '',
-      c.dob       || '',
-      c.caseDate  || '',
-      c.village   || '',
-      c.type      || '',
-      c.status    || ''
-    ];
-
-    cx = MARGIN;
-    headers1.forEach((h, i) => {
-      drawCell(cx, startY, cols1[i], headerH, h, { header: true, fontSize: 6 });
-      cx += cols1[i];
-    });
-    cx = MARGIN;
-    vals1.forEach((v, i) => {
-      drawCell(cx, startY + headerH, cols1[i], valueH, v, { bold: i === 0, fontSize: 7 });
-      cx += cols1[i];
-    });
-
-    // ── ROW 2: headers ──
-    const cols2 = (() => {
-      const raw   = [28, 32, 30, 50, 50];
-      const total = raw.reduce((a, b) => a + b, 0);
-      const scale = cardW / total;
-      return raw.map(w => parseFloat((w * scale).toFixed(2)));
-    })();
-
-    const row2Y    = startY + headerH + valueH;
-    const headers2 = ['TRIBE', 'EMPLOYMENT STATUS', 'CONTACTS', 'ADDRESS', 'OFFICER'];
-    const vals2    = [
-      c.tribe         || '',
-      c.employStatus  || '',
-      c.contacts      || '',
-      c.address       || '',
-      c.createdByName || ''
-    ];
-
-    cx = MARGIN;
-    headers2.forEach((h, i) => {
-      drawCell(cx, row2Y, cols2[i], row2HeaderH, h, { header: true, fontSize: 6 });
-      cx += cols2[i];
-    });
-    cx = MARGIN;
-    vals2.forEach((v, i) => {
-      drawCell(cx, row2Y + row2HeaderH, cols2[i], row2ValueH, v, { fontSize: 7 });
-      cx += cols2[i];
-    });
-
-    // ── ROW 3: Description & Assistance Given (dynamic height) ──
-    const row3Y  = row2Y + row2HeaderH + row2ValueH;
-    const halfW  = cardW / 2;
-
-    drawCell(MARGIN,         row3Y, halfW, row3HeaderH, 'DESCRIPTION',     { header: true, fontSize: 6 });
-    drawCell(MARGIN + halfW, row3Y, halfW, row3HeaderH, 'ASSISTANCE GIVEN', { header: true, fontSize: 6 });
-
-    drawCell(MARGIN,         row3Y + row3HeaderH, halfW, row3ValueH, c.desc   || '', { fontSize: 7 });
-    drawCell(MARGIN + halfW, row3Y + row3HeaderH, halfW, row3ValueH, c.assist || '', { fontSize: 7 });
-  }
-
-  // ── Build PDF ─────────────────────────────────────────────
-
-  drawPageHeader();
-
-  uniqueCases.forEach(c => {
-    const cardH = computeCardHeight(c);
-    checkNewPage(cardH + CARD_GAP);
-    drawCaseCard(c, y);
-    y += cardH + CARD_GAP;
-  });
-
-  drawFooter();
-  doc.save('case_register_' + new Date().toISOString().slice(0, 10) + '.pdf');
-  showToast('PDF exported', 'success');
-}
 
 // ══════════════════════════════════════════════
 // ADMIN PANEL
 // ══════════════════════════════════════════════
 let editingUserId = null;
+// ══════════════════════════════════════════════
+// ADMIN: CREATE USER (via Edge Function)
+// ══════════════════════════════════════════════
+const CREATE_USER_FN_URL = 'https://rsfpqgctxuiawcoglede.supabase.co/functions/v1/create-user';
+
+async function adminCreateUser() {
+  if (currentUserRole !== 'admin') { showToast('Admin access only', 'error'); return; }
+  const err = document.getElementById('au-error');
+  err.classList.remove('show');
+
+  const name       = document.getElementById('au-name').value.trim();
+  const email      = document.getElementById('au-email').value.trim();
+  const password   = document.getElementById('au-password').value;
+  const role       = document.getElementById('au-role').value;
+  const settlement = document.getElementById('au-settlement').value.trim();
+
+  if (!name || !email || !password) {
+    err.textContent = 'Name, email and password are required';
+    err.classList.add('show');
+    return;
+  }
+  if (password.length < 6) {
+    err.textContent = 'Password must be at least 6 characters';
+    err.classList.add('show');
+    return;
+  }
+
+  const btn = document.getElementById('au-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  try {
+    const { data: { session } } = await sbClient.auth.getSession();
+    if (!session) throw new Error('Your session has expired — please sign in again.');
+
+    const res = await fetch(CREATE_USER_FN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token,
+      },
+      body: JSON.stringify({ name, email, password, role, settlement }),
+    });
+
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to create user');
+
+    showToast('User "' + name + '" created successfully', 'success');
+    document.getElementById('au-name').value        = '';
+    document.getElementById('au-email').value       = '';
+    document.getElementById('au-password').value    = '';
+    document.getElementById('au-settlement').value  = '';
+    document.getElementById('au-role').value        = 'officer';
+
+    await sbClient.from('audit_log').insert({
+      action: 'USER_CREATE', case_num: null,
+      performed_by: currentUser.id, performed_by_name: currentUserName,
+      performed_at: new Date().toISOString(),
+      details: { new_user_email: email, new_user_name: name, role }
+    });
+
+    await loadAdminUsers();
+  } catch (e) {
+    err.textContent = e.message;
+    err.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ Create User';
+  }
+}
 
 async function loadAdminUsers() {
   if (!sbClient || currentUserRole !== 'admin') return;
@@ -2261,6 +2139,7 @@ async function loadUnreadCounts() {
     console.warn('loadUnreadCounts error:', e.message);
   }
 }
+
 
 function getUnreadCount(caseId) {
   return unreadCaseIds.has(caseId) ? 1 : 0;
