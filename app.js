@@ -556,6 +556,7 @@ function showPage(page) {
   if (page === 'audit')       renderAuditLog();
   if (page === 'admin')       loadAdminUsers();
   if (page === 'ai')          initAiPage();
+  if (page === 'receipts')    rvInit();
 }
 
 // ══════════════════════════════════════════════
