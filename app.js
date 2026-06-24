@@ -1,54 +1,111 @@
-
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
-const APP_VERSION = 'v5.0'; // change this one place only
+const APP_VERSION = 'v5.1';
 let cases = [];
 let auditLog = [];
 let editIdx = -1;
 let currentPage = 'dashboard';
 let sbClient = null;
-let dbFileHandle = null;
 let currentUser = null;
 let currentUserName = '';
 let currentUserRole = 'officer';
 let coordSelectedVillage = null;
 let allProfiles = [];
-const HAS_FSA = ('showOpenFilePicker' in window);
 const SB_CREDS_KEY = 'legalaid_sb_creds_v3';
 
 // ══════════════════════════════════════════════
-// OFFLINE & PIN SYSTEM
+// INDEXED DB — Cases offline cache
 // ══════════════════════════════════════════════
-const PIN_KEY     = 'legalaid_pin_v1';
-const CACHE_KEY   = 'legalaid_cache_v1';
-const PROFILE_KEY = 'legalaid_profile_v1';
-let pinBuffer     = '';
-let setPinBuffer  = '';
-let setPinStage   = 'first';
-let setPinFirst   = '';
-let isOffline     = false;
+const CASES_DB_NAME    = 'ditshwanelo_cases_db';
+const CASES_DB_VERSION = 1;
+let _casesDb = null;
 
-function isOnline() { return navigator.onLine; }
+function openCasesDB() {
+  return new Promise((resolve, reject) => {
+    if (_casesDb) { resolve(_casesDb); return; }
+    const req = indexedDB.open(CASES_DB_NAME, CASES_DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('cases'))
+        db.createObjectStore('cases', { keyPath: '_id' });
+      if (!db.objectStoreNames.contains('audit_log'))
+        db.createObjectStore('audit_log', { keyPath: 'id', autoIncrement: true });
+      if (!db.objectStoreNames.contains('meta'))
+        db.createObjectStore('meta');
+    };
+    req.onsuccess = e => { _casesDb = e.target.result; resolve(_casesDb); };
+    req.onerror   = () => reject(req.error);
+  });
+}
 
+async function idbSaveCases(casesArr) {
+  try {
+    const db = await openCasesDB();
+    const tx = db.transaction('cases', 'readwrite');
+    const store = tx.objectStore('cases');
+    store.clear();
+    casesArr.forEach(c => {
+      // Ensure every case has a key — use _id or generate a temp one
+      const record = { ...c, _id: c._id || ('local_' + Date.now() + '_' + Math.random()) };
+      store.put(record);
+    });
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror    = () => reject(tx.error);
+    });
+  } catch(e) { console.warn('idbSaveCases error:', e.message); }
+}
+
+async function idbLoadCases() {
+  try {
+    const db = await openCasesDB();
+    return new Promise((resolve, reject) => {
+      const tx  = db.transaction('cases', 'readonly');
+      const req = tx.objectStore('cases').getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror   = () => reject(req.error);
+    });
+  } catch(e) { console.warn('idbLoadCases error:', e.message); return []; }
+}
+
+async function idbSaveProfile(profile) {
+  try {
+    const db = await openCasesDB();
+    const tx = db.transaction('meta', 'readwrite');
+    tx.objectStore('meta').put(profile, 'profile');
+  } catch(e) {}
+}
+
+async function idbLoadProfile() {
+  try {
+    const db = await openCasesDB();
+    return new Promise((resolve, reject) => {
+      const tx  = db.transaction('meta', 'readonly');
+      const req = tx.objectStore('meta').get('profile');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror   = () => resolve(null);
+    });
+  } catch(e) { return null; }
+}
+
+// ── Keep localStorage as quick fallback for PIN ──
+const PIN_KEY = 'legalaid_pin_v1';
 function savePin(pin)  { localStorage.setItem(PIN_KEY, _enc(pin)); }
 function loadPin()     { const s = localStorage.getItem(PIN_KEY); return s ? _dec(s) : null; }
 function clearPin()    { localStorage.removeItem(PIN_KEY); }
 
-function saveCache(data) {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch(e) {}
-}
-function loadCache() {
-  try { const r = localStorage.getItem(CACHE_KEY); return r ? JSON.parse(r) : null; } catch(e) { return null; }
-}
-function saveProfile(p) {
-  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch(e) {}
-}
-function loadProfile() {
-  try { const r = localStorage.getItem(PROFILE_KEY); return r ? JSON.parse(r) : null; } catch(e) { return null; }
-}
+// ══════════════════════════════════════════════
+// OFFLINE & PIN SYSTEM
+// ══════════════════════════════════════════════
+let pinBuffer    = '';
+let setPinBuffer = '';
+let setPinStage  = 'first';
+let setPinFirst  = '';
+let isOffline    = false;
 
-// ── OFFLINE BANNER ──
+function isOnline() { return navigator.onLine; }
+
 function setOfflineMode(offline) {
   isOffline = offline;
   const banner = document.getElementById('offline-banner');
@@ -70,91 +127,55 @@ window.addEventListener('offline', () => {
   setOfflineMode(true);
   showToast('You are now offline — using cached data', '');
 });
+
+// ══════════════════════════════════════════════
+// GUIDANCE NOTIFICATIONS
+// ══════════════════════════════════════════════
 function subscribeGuidanceNotifications() {
-  if (!sbClient || !currentUser) {
-    console.warn('subscribeGuidanceNotifications: no client or user');
-    return;
-  }
+  if (!sbClient || !currentUser) return;
 
-  // Ask for permission if not yet decided
   if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission().then(perm => {
-      console.log('Notification permission:', perm);
-    });
+    Notification.requestPermission();
   }
 
-  console.log('Setting up guidance notifications for', currentUser.email);
-  console.log('Current notification permission:', 'Notification' in window ? Notification.permission : 'not supported');
-
-  // ── New comment listener ──
   sbClient.channel('guidance-all-comments')
     .on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'case_comments'
+      event: 'INSERT', schema: 'public', table: 'case_comments'
     }, payload => {
-      console.log('New comment received:', payload);
       const c = payload.new;
-
-      if (c.author_id === currentUser.id) {
-        console.log('Skipping — own message');
-        return;
-      }
-
-      // Mark unread in DB and refresh badges
+      if (c.author_id === currentUser.id) return;
       markUnread(c.case_id);
-
-      // In-app toast
       showToast('💬 New guidance message on case ' + (c.case_num || ''), 'success');
 
-      // Try Service Worker notification first (best for PWA)
       if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
         navigator.serviceWorker.ready.then(reg => {
           reg.showNotification('💬 New Guidance Message', {
             body: 'Case ' + (c.case_num || '') + ': ' + (c.author_name || 'Someone') + ' sent a message.',
-            icon: '/icon-192.png',
-            badge: '/icon-192.png',
-            tag: 'guidance-' + c.case_id,
-            renotify: true,
+            icon: '/icon-192.png', badge: '/icon-192.png',
+            tag: 'guidance-' + c.case_id, renotify: true,
             data: { caseId: c.case_id }
           });
-        }).catch(err => console.warn('SW notification failed:', err));
-
-      // Fallback: plain browser Notification
+        }).catch(() => {});
       } else if ('Notification' in window && Notification.permission === 'granted') {
         const n = new Notification('💬 New Guidance Message', {
           body: 'Case ' + (c.case_num || '') + ': ' + (c.author_name || 'Someone') + ' sent a message.',
-          icon: '/icon-192.png',
-          tag: 'guidance-' + c.case_id,
-          renotify: true,
+          icon: '/icon-192.png', tag: 'guidance-' + c.case_id, renotify: true,
         });
-        n.onclick = () => {
-          window.focus();
-          openGuidanceDirect(c.case_id);
-          n.close();
-        };
-      } else {
-        console.warn('Notifications not available. Permission:', Notification.permission);
+        n.onclick = () => { window.focus(); openGuidanceDirect(c.case_id); n.close(); };
       }
     })
-    .subscribe((status) => {
-      console.log('Guidance notification subscription status:', status);
-    });
+    .subscribe();
 
-  // ── Sync unread state across devices in real time ──
   sbClient.channel('guidance-unread-sync')
     .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'guidance_unread',
+      event: '*', schema: 'public', table: 'guidance_unread',
       filter: `user_id=eq.${currentUser.id}`
-    }, async () => {
-      await loadUnreadCounts();
-    })
+    }, async () => { await loadUnreadCounts(); })
     .subscribe();
 }
+
 // ══════════════════════════════════════════════
-// SYNC ENGINE — Merge-based, never overwrites
+// SYNC ENGINE
 // ══════════════════════════════════════════════
 async function syncOnReconnect() {
   if (!sbClient || !currentUser) return;
@@ -162,127 +183,84 @@ async function syncOnReconnect() {
   setSbStatus('syncing', 'Syncing...');
 
   try {
-    // Step 1: Get what is currently in Supabase
     const { data: cloudRows, error } = await sbClient.from('cases').select('*');
     if (error) throw error;
 
     const cloudCases = cloudRows.map(rowToCase);
-
-    // Step 2: Build lookup maps by _id and by case num
     const cloudById  = {};
     const cloudByNum = {};
     cloudCases.forEach(c => {
-      if (c._id) cloudById[c._id]  = c;
-      if (c.num) cloudByNum[c.num] = c;
+      if (c._id) cloudById[c._id]   = c;
+      if (c.num) cloudByNum[c.num]  = c;
     });
 
-    // Step 3: Decide what to insert or update in Supabase
     const toInsert = [];
     const toUpdate = [];
 
     cases.forEach(local => {
-      const byId  = local._id ? cloudById[local._id]   : null;
-      const byNum = local.num ? cloudByNum[local.num]  : null;
-      const cloud = byId || byNum;
-
+      const cloud = (local._id ? cloudById[local._id] : null) || (local.num ? cloudByNum[local.num] : null);
       if (!cloud) {
-        // Exists locally but not in cloud — push it up
         toInsert.push(local);
       } else {
-        // Exists in both — whoever was edited most recently wins
         const localTime = new Date(local.updatedAt || local.createdAt || 0).getTime();
-        const cloudTime = new Date(cloud.updatedAt || cloud.createdAt || 0).getTime();
-        if (localTime > cloudTime) {
-          local._id = cloud._id; // ensure we use the Supabase ID
-          toUpdate.push(local);
-        }
-        // cloud is same age or newer — pull will bring it down
+        const cloudTime = new Date(cloud.updatedAt  || cloud.createdAt  || 0).getTime();
+        if (localTime > cloudTime) { local._id = cloud._id; toUpdate.push(local); }
       }
     });
 
-    // Step 4: Push new local cases up to Supabase
     for (const c of toInsert) {
       const row = caseToRow(c);
-      if (!row.created_by) {
-        row.created_by      = currentUser.id;
-        row.created_by_name = currentUserName;
-      }
-      const { data, error: ie } = await sbClient
-        .from('cases').insert(row).select().single();
+      if (!row.created_by) { row.created_by = currentUser.id; row.created_by_name = currentUserName; }
+      const { data, error: ie } = await sbClient.from('cases').insert(row).select().single();
       if (!ie && data) c._id = data.id;
-      else if (ie) console.warn('Insert failed for', c.num, ie.message);
     }
-
-    // Step 5: Push updated local cases up to Supabase
     for (const c of toUpdate) {
-      const row = caseToRow(c);
-      const { error: ue } = await sbClient
-        .from('cases').update(row).eq('id', c._id);
-      if (ue) console.warn('Update failed for', c.num, ue.message);
+      await sbClient.from('cases').update(caseToRow(c)).eq('id', c._id);
     }
 
     const pushed = toInsert.length + toUpdate.length;
-
-    // Step 6: Pull the fully merged result back down
     await pullFromSupabase();
 
-    // Step 7: Write merged result to Excel so it is also up to date
-    if (dbFileHandle) await writeToFile();
-
     if (pushed > 0) {
-      showToast(
-        'Synced: ' + toInsert.length + ' new + ' + toUpdate.length + ' updated → Supabase ✓',
-        'success'
-      );
+      showToast('Synced: ' + toInsert.length + ' new + ' + toUpdate.length + ' updated → Supabase ✓', 'success');
     } else {
       showToast('Back online — already up to date ✓', 'success');
     }
-
-  } catch (e) {
+  } catch(e) {
     setSbStatus('error', 'Sync failed');
     showToast('Sync error: ' + e.message, 'error');
   }
 }
 
-// ── PIN UI HELPERS ──
+// ── PIN UI ──
 function updatePinDots(buf, prefix='') {
   for (let i = 0; i < 4; i++) {
-    const dot = document.getElementById((prefix ? prefix : '') + 'dot-' + i);
-    if (!dot) continue;
-    dot.style.background = i < buf.length ? 'var(--navy)' : 'var(--border)';
+    const dot = document.getElementById((prefix || '') + 'dot-' + i);
+    if (dot) dot.style.background = i < buf.length ? 'var(--navy)' : 'var(--border)';
   }
 }
 
-function pinPress(d) {
-  if (pinBuffer.length >= 4) return;
-  pinBuffer += d;
-  updatePinDots(pinBuffer);
-  if (pinBuffer.length === 4) setTimeout(verifyPin, 200);
-}
-function pinBackspace() { pinBuffer = pinBuffer.slice(0,-1); updatePinDots(pinBuffer); }
-function pinClear()     { pinBuffer = ''; updatePinDots(pinBuffer); }
+function pinPress(d)   { if (pinBuffer.length >= 4) return; pinBuffer += d; updatePinDots(pinBuffer); if (pinBuffer.length === 4) setTimeout(verifyPin, 200); }
+function pinBackspace(){ pinBuffer = pinBuffer.slice(0,-1); updatePinDots(pinBuffer); }
+function pinClear()    { pinBuffer = ''; updatePinDots(pinBuffer); }
 
-function verifyPin() {
+async function verifyPin() {
   const stored = loadPin();
-  if (!stored) {
-    showPinError('No PIN set. Please sign in online first.');
-    pinBuffer = ''; updatePinDots(pinBuffer); return;
-  }
+  if (!stored) { showPinError('No PIN set. Please sign in online first.'); pinBuffer = ''; updatePinDots(pinBuffer); return; }
   if (pinBuffer === stored) {
-    const profile = loadProfile();
-    const cache   = loadCache();
+    const profile = await idbLoadProfile();
+    const cached  = await idbLoadCases();
     if (!profile) { showPinError('No cached profile. Please sign in online first.'); pinBuffer = ''; return; }
     currentUserName = profile.name;
     currentUserRole = profile.role;
     currentUser     = { id: profile.id, email: profile.email };
-    cases    = cache ? cache.cases    || [] : [];
-    auditLog = cache ? cache.auditLog || [] : [];
+    cases           = cached || [];
     setOfflineMode(true);
     hideAuthScreen();
     updateUserChip();
     document.getElementById('nav-coordinator').style.display = ['coordinator','admin'].includes(currentUserRole) ? 'flex' : 'none';
     document.getElementById('nav-admin').style.display       = currentUserRole === 'admin' ? 'flex' : 'none';
-    updateStats(); renderRecent(); updateDbUI(); updateSbUI();
+    updateStats(); renderRecent(); updateSbUI();
     showToast('Offline access granted — cached data loaded', 'success');
   } else {
     document.querySelectorAll('[id^="dot-"]').forEach(d => d.style.background = 'var(--danger)');
@@ -291,6 +269,7 @@ function verifyPin() {
     if (err) { err.textContent = 'Incorrect PIN. Try again.'; err.classList.add('show'); setTimeout(() => err.classList.remove('show'), 2000); }
   }
 }
+
 function showPinError(msg) {
   const err = document.getElementById('pin-error');
   if (err) { err.textContent = msg; err.classList.add('show'); }
@@ -327,15 +306,10 @@ function setPinClear() {
 
 function handleSetPin() {
   if (setPinStage === 'first') {
-    setPinFirst  = setPinBuffer;
-    setPinBuffer = '';
-    setPinStage  = 'confirm';
+    setPinFirst = setPinBuffer; setPinBuffer = ''; setPinStage = 'confirm';
     const titleEl = document.querySelector('#auth-step-setpin div:nth-child(1) div:nth-child(2)');
     if (titleEl) titleEl.textContent = 'Confirm your PIN';
-    for (let i = 0; i < 4; i++) {
-      const dot = document.getElementById('sdot-' + i);
-      if (dot) dot.style.background = 'var(--border)';
-    }
+    for (let i = 0; i < 4; i++) { const dot = document.getElementById('sdot-' + i); if (dot) dot.style.background = 'var(--border)'; }
   } else {
     if (setPinBuffer === setPinFirst) {
       savePin(setPinBuffer);
@@ -346,25 +320,16 @@ function handleSetPin() {
       const err = document.getElementById('setpin-error');
       if (err) { err.textContent = 'PINs do not match. Try again.'; err.classList.add('show'); }
       setPinBuffer = ''; setPinFirst = ''; setPinStage = 'first';
-      for (let i = 0; i < 4; i++) {
-        const dot = document.getElementById('sdot-' + i);
-        if (dot) dot.style.background = 'var(--border)';
-      }
+      for (let i = 0; i < 4; i++) { const dot = document.getElementById('sdot-' + i); if (dot) dot.style.background = 'var(--border)'; }
     }
   }
 }
 
-function skipSetPin() {
-  document.getElementById('auth-step-setpin').style.display = 'none';
-  hideAuthScreen();
-}
+function skipSetPin() { document.getElementById('auth-step-setpin').style.display = 'none'; hideAuthScreen(); }
 
 function showChangePinModal() {
   setPinBuffer = ''; setPinFirst = ''; setPinStage = 'first';
-  for (let i = 0; i < 4; i++) {
-    const dot = document.getElementById('sdot-' + i);
-    if (dot) dot.style.background = 'var(--border)';
-  }
+  for (let i = 0; i < 4; i++) { const dot = document.getElementById('sdot-' + i); if (dot) dot.style.background = 'var(--border)'; }
   document.getElementById('auth-step-setpin').style.display = 'block';
   document.querySelectorAll('#auth-screen > .auth-box > div').forEach(d => {
     if (d.id !== 'auth-step-setpin') d.style.display = 'none';
@@ -375,14 +340,6 @@ function showChangePinModal() {
 // ══════════════════════════════════════════════
 // AUTH
 // ══════════════════════════════════════════════
-function switchAuthTab(tab) {
-  document.querySelectorAll('.auth-tab').forEach((t,i) =>
-    t.classList.toggle('active', (i===0 && tab==='login') || (i===1 && tab==='signup'))
-  );
-  document.getElementById('login-form').style.display  = tab === 'login'  ? 'flex' : 'none';
-  document.getElementById('signup-form').style.display = tab === 'signup' ? 'flex' : 'none';
-}
-
 async function saveAndContinue() {
   const url = document.getElementById('auth-sb-url').value.trim();
   const key = document.getElementById('auth-sb-key').value.trim();
@@ -399,7 +356,7 @@ async function saveAndContinue() {
     document.getElementById('sb-url').value = url;
     document.getElementById('sb-key').value = key;
     document.getElementById('auth-step-creds').style.display  = 'none';
-    document.getElementById('auth-step-login').style.display = 'block';
+    document.getElementById('auth-step-login').style.display  = 'block';
   } catch(e) {
     err.textContent = 'Could not connect: ' + (e.message || e) + '. Check your URL and key.';
     err.classList.add('show'); sbClient = null;
@@ -411,16 +368,16 @@ function resetCreds() {
   document.getElementById('auth-sb-url').value = '';
   document.getElementById('auth-sb-key').value = '';
   document.getElementById('auth-step-creds').style.display  = 'block';
-  document.getElementById('auth-step-login').style.display = 'none';
+  document.getElementById('auth-step-login').style.display  = 'none';
 }
 
 async function initAuth() {
-   await new Promise(resolve => setTimeout(resolve, 300)); // wait for SW
+  await new Promise(resolve => setTimeout(resolve, 300));
   const creds = loadSbCreds();
 
   if (!creds) {
-    if (!isOnline() && loadPin() && loadProfile()) { showPinScreen(); return; }
-    document.getElementById('auth-step-creds').style.display  = 'block';
+    if (!isOnline() && loadPin()) { showPinScreen(); return; }
+    document.getElementById('auth-step-creds').style.display = 'block';
     document.getElementById('auth-step-login').style.display = 'none';
     showAuthScreen(); return;
   }
@@ -432,9 +389,9 @@ async function initAuth() {
     document.getElementById('sb-key').value = creds.key;
 
     if (!isOnline()) {
-      if (loadPin() && loadProfile()) { showPinScreen(); }
+      if (loadPin()) { showPinScreen(); }
       else {
-        document.getElementById('auth-step-creds').style.display  = 'none';
+        document.getElementById('auth-step-creds').style.display = 'none';
         document.getElementById('auth-step-login').style.display = 'block';
         const err = document.getElementById('login-error');
         if (err) { err.textContent = 'You are offline. Set a PIN after your first online login to access offline.'; err.classList.add('show'); }
@@ -446,14 +403,14 @@ async function initAuth() {
     const { data: { session } } = await sbClient.auth.getSession();
     if (session) { await onAuthSuccess(session.user); }
     else {
-      document.getElementById('auth-step-creds').style.display  = 'none';
+      document.getElementById('auth-step-creds').style.display = 'none';
       document.getElementById('auth-step-login').style.display = 'block';
       showAuthScreen();
     }
   } catch(e) {
-    if (loadPin() && loadProfile()) { showPinScreen(); }
+    if (loadPin()) { showPinScreen(); }
     else {
-      document.getElementById('auth-step-creds').style.display  = 'block';
+      document.getElementById('auth-step-creds').style.display = 'block';
       document.getElementById('auth-step-login').style.display = 'none';
       showAuthScreen();
     }
@@ -462,24 +419,19 @@ async function initAuth() {
 
 function showPinScreen() {
   pinBuffer = ''; updatePinDots(pinBuffer);
-  const profile  = loadProfile();
+  const profile  = null; // loaded async in verifyPin
   const pinTitle = document.getElementById('pin-title');
-  if (pinTitle && profile) pinTitle.textContent = 'Welcome back, ' + (profile.name || '');
-  document.getElementById('auth-step-creds').style.display   = 'none';
-  document.getElementById('auth-step-login').style.display   = 'none';
-  document.getElementById('auth-step-pin').style.display     = 'block';
-  document.getElementById('auth-step-setpin').style.display  = 'none';
+  // Try to show name from IndexedDB async
+  idbLoadProfile().then(p => { if (p && pinTitle) pinTitle.textContent = 'Welcome back, ' + (p.name || ''); });
+  document.getElementById('auth-step-creds').style.display  = 'none';
+  document.getElementById('auth-step-login').style.display  = 'none';
+  document.getElementById('auth-step-pin').style.display    = 'block';
+  document.getElementById('auth-step-setpin').style.display = 'none';
   showAuthScreen();
 }
 
-function showAuthScreen() {
-  document.getElementById('auth-screen').classList.remove('hidden');
-  document.querySelector('.layout').style.display = 'none';
-}
-function hideAuthScreen() {
-  document.getElementById('auth-screen').classList.add('hidden');
-  document.querySelector('.layout').style.display = 'flex';
-}
+function showAuthScreen() { document.getElementById('auth-screen').classList.remove('hidden'); document.querySelector('.layout').style.display = 'none'; }
+function hideAuthScreen() { document.getElementById('auth-screen').classList.add('hidden'); document.querySelector('.layout').style.display = 'flex'; }
 
 async function doLogin() {
   const email = document.getElementById('login-email').value.trim();
@@ -494,35 +446,12 @@ async function doLogin() {
   } catch(e) { err.textContent = e.message; err.classList.add('show'); }
 }
 
-async function doSignup() {
-  const name  = document.getElementById('signup-name').value.trim();
-  const email = document.getElementById('signup-email').value.trim();
-  const pw    = document.getElementById('signup-password').value;
-  const err   = document.getElementById('signup-error');
-  err.classList.remove('show'); err.style.color = '';
-  if (!name || !email || !pw) { err.textContent = 'All fields required'; err.classList.add('show'); return; }
-  if (pw.length < 6) { err.textContent = 'Password must be at least 6 characters'; err.classList.add('show'); return; }
-  try {
-    const { data, error } = await sbClient.auth.signUp({ email, password: pw, options: { data: { full_name: name, role: 'officer' } } });
-    if (error) throw error;
-    if (data.user) {
-      await sbClient.from('user_profiles').upsert(
-        { id: data.user.id, full_name: name, email, role: 'officer' },
-        { onConflict: 'id' }
-      );
-    }
-    err.style.color  = 'var(--success)';
-    err.textContent  = '✓ Account created! Check your email to confirm, then sign in.';
-    err.classList.add('show');
-  } catch(e) { err.textContent = e.message; err.classList.add('show'); }
-}
-
 async function onAuthSuccess(user) {
   currentUser     = user;
   currentUserName = user.user_metadata?.full_name || user.email;
+
   try {
-    const { data: profile } = await sbClient
-      .from('user_profiles').select('role,full_name').eq('id', user.id).single();
+    const { data: profile } = await sbClient.from('user_profiles').select('role,full_name').eq('id', user.id).single();
     if (profile) {
       currentUserRole = profile.role || 'officer';
       if (profile.full_name) currentUserName = profile.full_name;
@@ -535,11 +464,14 @@ async function onAuthSuccess(user) {
     }
   } catch(e) { currentUserRole = 'officer'; }
 
-  saveProfile({ id: user.id, email: user.email, name: currentUserName, role: currentUserRole });
+  // Save profile to IndexedDB for offline access
+  await idbSaveProfile({ id: user.id, email: user.email, name: currentUserName, role: currentUserRole });
+
+  // Request persistent storage
+  if (navigator.storage && navigator.storage.persist) { await navigator.storage.persist(); }
 
   hideAuthScreen();
 
-  // Request notification permission right after login
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
   }
@@ -552,20 +484,15 @@ async function onAuthSuccess(user) {
   updateSbUI();
   await loadAllProfiles();
   await pullFromSupabase();
-  await loadUnreadCounts(); // ← add this
+  await loadUnreadCounts();
   subscribeGuidanceNotifications();
   await loadAuditLog();
-  await autoConnectExcel();
-  
   updateDbUI();
 
   if (!loadPin()) {
     setTimeout(() => {
       setPinBuffer = ''; setPinFirst = ''; setPinStage = 'first';
-      for (let i = 0; i < 4; i++) {
-        const dot = document.getElementById('sdot-' + i);
-        if (dot) dot.style.background = 'var(--border)';
-      }
+      for (let i = 0; i < 4; i++) { const dot = document.getElementById('sdot-' + i); if (dot) dot.style.background = 'var(--border)'; }
       document.getElementById('auth-step-setpin').style.display = 'block';
       document.getElementById('auth-step-creds').style.display  = 'none';
       document.getElementById('auth-step-login').style.display  = 'none';
@@ -574,15 +501,16 @@ async function onAuthSuccess(user) {
     }, 800);
   }
 }
+
 async function doLogout() {
   if (sbClient) await sbClient.auth.signOut();
   currentUser = null; currentUserName = ''; currentUserRole = 'officer';
   cases = []; auditLog = [];
   setOfflineMode(false);
-  document.getElementById('auth-step-creds').style.display   = 'none';
-  document.getElementById('auth-step-login').style.display   = 'block';
-  document.getElementById('auth-step-pin').style.display     = 'none';
-  document.getElementById('auth-step-setpin').style.display  = 'none';
+  document.getElementById('auth-step-creds').style.display  = 'none';
+  document.getElementById('auth-step-login').style.display  = 'block';
+  document.getElementById('auth-step-pin').style.display    = 'none';
+  document.getElementById('auth-step-setpin').style.display = 'none';
   document.getElementById('login-email').value    = '';
   document.getElementById('login-password').value = '';
   document.getElementById('login-error').classList.remove('show');
@@ -601,9 +529,9 @@ function updateUserChip() {
 }
 
 function togglePw(id, btn) {
-  const inp  = document.getElementById(id);
+  const inp = document.getElementById(id);
   const show = inp.type === 'password';
-  inp.type   = show ? 'text' : 'password';
+  inp.type = show ? 'text' : 'password';
   btn.textContent = show ? '🙈' : '👁';
 }
 
@@ -611,12 +539,12 @@ function togglePw(id, btn) {
 // PAGE NAV
 // ══════════════════════════════════════════════
 function showPage(page) {
-  if (page === 'admin'       && currentUserRole !== 'admin')                          { showToast('Admin access only','error'); return; }
-  if (page === 'coordinator' && !['coordinator','admin'].includes(currentUserRole))   { showToast('Coordinator/Admin access only','error'); return; }
+  if (page === 'admin'       && currentUserRole !== 'admin')                        { showToast('Admin access only','error'); return; }
+  if (page === 'coordinator' && !['coordinator','admin'].includes(currentUserRole)) { showToast('Coordinator/Admin access only','error'); return; }
   document.querySelectorAll('.page').forEach(p     => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + page).classList.add('active');
-  const titles = { dashboard:'Dashboard', cases:'All Cases', coordinator:'Coordinator Panel', audit:'Audit Log', database:'Database Settings', admin:'Admin Panel', ai:'AI Insights' };
+  const titles = { dashboard:'Dashboard', cases:'All Cases', coordinator:'Coordinator Panel', audit:'Audit Log', database:'Database Settings', admin:'Admin Panel', ai:'AI Insights', receipts:'Receipt Vault' };
   document.getElementById('page-title').textContent = titles[page] || page;
   currentPage = page;
   const navMap   = { dashboard:0, cases:1, coordinator:2, admin:3, audit:4, database:5 };
@@ -662,12 +590,12 @@ function renderRecent() {
   const empty  = document.getElementById('recent-empty');
   tbody.innerHTML = '';
   empty.style.display = cases.length === 0 ? 'block' : 'none';
-  recent.forEach((c, localIdx) => {
+  recent.forEach(c => {
     const idx = cases.indexOf(c);
     tbody.insertAdjacentHTML('beforeend', `<tr>
       <td><span class="case-num">${esc(c.num)}</span></td>
       <td class="name-cell">${esc(c.name)}</td>
-      <td>${esc(c.village)  || '—'}</td>
+      <td>${esc(c.village) || '—'}</td>
       <td>${esc(c.type)}</td>
       <td><span class="badge badge-${c.status.toLowerCase()}">${c.status}</span></td>
       <td><div style="display:flex;gap:5px">
@@ -676,6 +604,7 @@ function renderRecent() {
       </div></td></tr>`);
   });
 }
+
 // ══════════════════════════════════════════════
 // RENDER TABLE
 // ══════════════════════════════════════════════
@@ -688,9 +617,7 @@ function renderTable() {
 
   const filtered = cases.map((c,i) => ({ c, i })).filter(({ c }) => {
     const matchQ   = !q || [c.num,c.name,c.idNumber,c.tribe,c.village,c.address,c.type,c.desc,c.contacts].join(' ').toLowerCase().includes(q);
-    const settlementUserIds = allProfiles
-      .filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase())
-      .map(p => p.id);
+    const settlementUserIds = allProfiles.filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase()).map(p => p.id);
     const matchSet = !fset || settlementUserIds.includes(c.createdBy);
     return matchQ && (!ft || c.type === ft) && (!fs || c.status === fs) && (!fv || c.village === fv) && matchSet;
   });
@@ -706,18 +633,18 @@ function renderTable() {
       <td class="name-cell">${esc(c.name)}</td>
       <td>${esc(c.idNumber) || '—'}</td>
       <td>${c.dob || '—'}</td>
-      <td>${esc(c.tribe)    || '—'}</td>
-      <td>${esc(c.village)  || '—'}</td>
+      <td>${esc(c.tribe)   || '—'}</td>
+      <td>${esc(c.village) || '—'}</td>
       <td>${esc(c.type)}</td>
       <td><span class="badge badge-${c.status.toLowerCase()}">${c.status}</span></td>
       <td><span style="font-size:11.5px;color:var(--text-muted)">${esc(c.updatedByName || c.createdByName || '—')}</span></td>
-       <td><div style="display:flex;gap:4px">
+      <td><div style="display:flex;gap:4px">
         <button class="btn btn-outline btn-sm" onclick="viewCase(${i})">👁</button>
         <button class="btn btn-outline btn-sm" onclick="editCase(${i})">✎</button>
-<button class="btn btn-outline btn-sm" onclick="openGuidanceDirect('${c._id}')" title="Guidance" style="position:relative">
+        <button class="btn btn-outline btn-sm" onclick="openGuidanceDirect('${c._id}')" title="Guidance" style="position:relative">
           💬${getUnreadCount(c._id) > 0 ? ` <span style="position:absolute;top:-5px;right:-5px;background:#d9534f;color:#fff;border-radius:50%;font-size:9px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-weight:700;padding:0 3px">${getUnreadCount(c._id)}</span>` : ''}${c.needsGuidance ? ' 🆘' : ''}
         </button>
-        <button class="btn btn-danger btn-sm"  onclick="deleteCase(${i})">✕</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCase(${i})">✕</button>
       </div></td></tr>`);
   });
 }
@@ -732,9 +659,7 @@ function renderCoordinator() {
 
   const filtered = cases.filter(c => {
     const matchStatus = !fs || c.status === fs;
-    const settlementUserIds = allProfiles
-      .filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase())
-      .map(p => p.id);
+    const settlementUserIds = allProfiles.filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase()).map(p => p.id);
     const matchSet = !fset || settlementUserIds.includes(c.createdBy);
     return matchStatus && matchSet;
   });
@@ -769,7 +694,7 @@ function renderCoordinator() {
     card.innerHTML = `<div class="vc-name">📍 ${esc(v.name)}</div>
       <div class="vc-total" style="margin-bottom:6px">${v.cases.length} case${v.cases.length !== 1 ? 's' : ''}</div>
       <div class="vc-stats">
-        ${open    ? `<span class="vc-stat ongoing">${open} Ongoing</span>`   : ''}
+        ${open    ? `<span class="vc-stat ongoing">${open} Ongoing</span>`    : ''}
         ${pending ? `<span class="vc-stat pending">${pending} Pending</span>` : ''}
         ${closed  ? `<span class="vc-stat closed">${closed} Closed</span>`   : ''}
       </div>`;
@@ -794,18 +719,18 @@ function renderCoordTable(village, filteredCases) {
       <td><span class="case-num">${esc(c.num)}</span></td>
       <td class="name-cell">${esc(c.name)}</td>
       <td>${esc(c.idNumber) || '—'}</td>
-      <td>${esc(c.tribe)    || '—'}</td>
-      <td>${esc(c.address)  || '—'}</td>
+      <td>${esc(c.tribe)   || '—'}</td>
+      <td>${esc(c.address) || '—'}</td>
       <td>${esc(c.type)}</td>
       <td><span class="badge badge-${c.status.toLowerCase()}">${c.status}</span></td>
       <td style="font-size:11.5px;color:var(--text-muted)">${esc(c.createdByName || '—')}</td>
       <td><div style="display:flex;gap:4px">
-         <button class="btn btn-outline btn-sm" onclick="viewCase(${idx})">👁</button>
+        <button class="btn btn-outline btn-sm" onclick="viewCase(${idx})">👁</button>
         <button class="btn btn-outline btn-sm" onclick="editCase(${idx})">✎</button>
         <button class="btn btn-outline btn-sm" onclick="openGuidanceDirect('${c._id}')" title="Guidance" style="position:relative">
           💬${getUnreadCount(c._id) > 0 ? ` <span style="position:absolute;top:-5px;right:-5px;background:#d9534f;color:#fff;border-radius:50%;font-size:9px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-weight:700;padding:0 3px">${getUnreadCount(c._id)}</span>` : ''}${c.needsGuidance ? ' 🆘' : ''}
         </button>
-      </tr>`);
+      </div></td></tr>`);
   });
 }
 
@@ -840,9 +765,7 @@ async function logAudit(action, c) {
     details:           { name: c.name, status: c.status }
   };
   auditLog.push(entry);
-  if (sbClient) {
-    try { await sbClient.from('audit_log').insert(entry); } catch(e) {}
-  }
+  if (sbClient) { try { await sbClient.from('audit_log').insert(entry); } catch(e) {} }
 }
 
 async function loadAuditLog() {
@@ -861,21 +784,22 @@ function openAddModal() {
   document.getElementById('modal-title').textContent = 'Add New Case';
   document.getElementById('modal-sub').textContent   = 'Fill in the details below';
   ['f-num','f-name','f-idnum','f-tribe','f-village','f-address','f-contacts','f-desc','f-assist','f-type-custom'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('f-dob').value    = '';
+  document.getElementById('f-dob').value           = '';
   document.getElementById('f-case-date').value     = '';
   document.getElementById('f-employ-status').value = '';
-  document.getElementById('f-num').value    = autoNum();
-  document.getElementById('f-type').value   = 'Labour Dispute';
+  document.getElementById('f-num').value           = autoNum();
+  document.getElementById('f-type').value          = 'Labour Dispute';
   document.getElementById('f-type-custom-wrap').style.display = 'none';
-  document.getElementById('f-status').value = 'Ongoing';
+  document.getElementById('f-status').value        = 'Ongoing';
   document.getElementById('case-modal').classList.add('open');
 }
 
 function toggleCustomCaseType() {
-  const sel = document.getElementById('f-type');
+  const sel  = document.getElementById('f-type');
   const wrap = document.getElementById('f-type-custom-wrap');
   wrap.style.display = sel.value === '__custom__' ? 'block' : 'none';
 }
+
 function autoNum() {
   const nums = cases.map(c => { const m = c.num.match(/(\d+)$/); return m ? parseInt(m[1]) : 0; });
   return 'G-' + (Math.max(0, ...nums) + 1).toString().padStart(3,'0');
@@ -885,16 +809,16 @@ function editCase(idx) {
   editIdx = idx; const c = cases[idx];
   document.getElementById('modal-title').textContent = 'Edit Case';
   document.getElementById('modal-sub').textContent   = c.num + ' — ' + c.name;
-  document.getElementById('f-num').value      = c.num;
-  document.getElementById('f-name').value     = c.name;
-  document.getElementById('f-case-date').value      = c.caseDate     || '';
-  document.getElementById('f-employ-status').value  = c.employStatus || '';
-  document.getElementById('f-idnum').value    = c.idNumber  || '';
-  document.getElementById('f-dob').value      = c.dob       || '';
-  document.getElementById('f-tribe').value    = c.tribe     || '';
-  document.getElementById('f-village').value  = c.village   || '';
-  document.getElementById('f-address').value  = c.address   || '';
-  document.getElementById('f-contacts').value = c.contacts  || '';
+  document.getElementById('f-num').value             = c.num;
+  document.getElementById('f-name').value            = c.name;
+  document.getElementById('f-case-date').value       = c.caseDate     || '';
+  document.getElementById('f-employ-status').value   = c.employStatus || '';
+  document.getElementById('f-idnum').value           = c.idNumber     || '';
+  document.getElementById('f-dob').value             = c.dob          || '';
+  document.getElementById('f-tribe').value           = c.tribe        || '';
+  document.getElementById('f-village').value         = c.village      || '';
+  document.getElementById('f-address').value         = c.address      || '';
+  document.getElementById('f-contacts').value        = c.contacts     || '';
 
   const knownTypes = ['Labour Dispute','Land Dispute','Family Matter','Criminal','Child Maintanance','Dept Disputes','Unfair Work Treatment','Civil','Inheritence Despute'];
   if (c.type && !knownTypes.includes(c.type)) {
@@ -907,9 +831,9 @@ function editCase(idx) {
     document.getElementById('f-type-custom-wrap').style.display = 'none';
   }
 
-  document.getElementById('f-desc').value     = c.desc      || '';
-  document.getElementById('f-assist').value   = c.assist    || '';
-  document.getElementById('f-status').value   = c.status    || 'Ongoing';
+  document.getElementById('f-desc').value   = c.desc   || '';
+  document.getElementById('f-assist').value = c.assist || '';
+  document.getElementById('f-status').value = c.status || 'Ongoing';
   document.getElementById('case-modal').classList.add('open');
   document.getElementById('view-modal').classList.remove('open');
 }
@@ -928,20 +852,19 @@ async function saveCase() {
 
   const now   = new Date().toISOString();
   const entry = {
-    num:      document.getElementById('f-num').value.trim() || autoNum(),
+    num:          document.getElementById('f-num').value.trim() || autoNum(),
     name,
-    idNumber: document.getElementById('f-idnum').value.trim(),
-    dob:      document.getElementById('f-dob').value || null,
+    idNumber:     document.getElementById('f-idnum').value.trim(),
+    dob:          document.getElementById('f-dob').value || null,
     caseDate:     document.getElementById('f-case-date').value || null,
     employStatus: document.getElementById('f-employ-status').value.trim(),
-    tribe:    document.getElementById('f-tribe').value.trim(),
-    village:  document.getElementById('f-village').value.trim(),
-    address:  document.getElementById('f-address').value.trim(),
-    contacts: document.getElementById('f-contacts').value.trim(),
-    type,
-    desc:     document.getElementById('f-desc').value.trim(),
-    assist:   document.getElementById('f-assist').value.trim(),
-    status:   document.getElementById('f-status').value,
+    tribe:        document.getElementById('f-tribe').value.trim(),
+    village:      document.getElementById('f-village').value.trim(),
+    address:      document.getElementById('f-address').value.trim(),
+    contacts:     document.getElementById('f-contacts').value.trim(),
+    type, desc:   document.getElementById('f-desc').value.trim(),
+    assist:       document.getElementById('f-assist').value.trim(),
+    status:       document.getElementById('f-status').value,
     updatedAt:      now,
     updatedBy:      currentUser?.id || null,
     updatedByName:  currentUserName,
@@ -967,8 +890,7 @@ async function saveCase() {
   }
 
   closeModal();
-  saveCache({ cases, auditLog }); // always update offline cache
-  saveToDatabase();               // write to Excel if connected
+  await idbSaveCases(cases); // save to IndexedDB
   updateAll();
 }
 
@@ -977,8 +899,7 @@ function deleteCase(idx) {
   const deleted = cases.splice(idx, 1)[0];
   logAudit('DELETE', deleted);
   if (!isOffline) deleteCaseFromSupabase(deleted);
-  saveCache({ cases, auditLog });
-  saveToDatabase();
+  idbSaveCases(cases);
   updateAll();
   showToast('Case deleted','error');
 }
@@ -987,41 +908,40 @@ function deleteCase(idx) {
 // VIEW MODAL
 // ══════════════════════════════════════════════
 function viewCase(idx) {
-   const c = cases[idx];
+  const c = cases[idx];
   window.currentViewCaseId = c._id || null;
   document.getElementById('view-case-num').textContent  = c.num;
   document.getElementById('view-case-name').textContent = c.name;
   document.getElementById('view-edit-btn').onclick = () => editCase(idx);
 
-
-
-
   const fields = [
-    { l:'Case Number',           v: c.num },
-    { l:'Full Names',            v: c.name },
-    { l:'ID Number',             v: c.idNumber },
-    { l:'Date of Birth',         v: c.dob },
-    { l:'Tribe',                 v: c.tribe },
-    { l:'Date of Case',       v: c.caseDate },
-    { l:'Employment Status',  v: c.employStatus },
-    { l:'Contacts',              v: c.contacts },
-    { l:'Village / Settlement',  v: c.village },
-    { l:'Home Address / Ward',   v: c.address,  full: true },
-    { l:'Case Type',             v: c.type },
-    { l:'Status',                v: c.status },
-    { l:'Brief Description',     v: c.desc,     full: true },
-    { l:'Assistance Given',      v: c.assist,   full: true },
+    { l:'Case Number',          v: c.num },
+    { l:'Full Names',           v: c.name },
+    { l:'ID Number',            v: c.idNumber },
+    { l:'Date of Birth',        v: c.dob },
+    { l:'Tribe',                v: c.tribe },
+    { l:'Date of Case',         v: c.caseDate },
+    { l:'Employment Status',    v: c.employStatus },
+    { l:'Contacts',             v: c.contacts },
+    { l:'Village / Settlement', v: c.village },
+    { l:'Home Address / Ward',  v: c.address,  full: true },
+    { l:'Case Type',            v: c.type },
+    { l:'Status',               v: c.status },
+    { l:'Brief Description',    v: c.desc,     full: true },
+    { l:'Assistance Given',     v: c.assist,   full: true },
   ];
   document.getElementById('view-detail-grid').innerHTML = fields.map(f => `
     <div class="detail-field ${f.full ? 'full' : ''}">
       <div class="dl">${f.l}</div>
       <div class="dv ${!f.v ? 'empty' : ''}">${f.v ? esc(f.v) : 'Not recorded'}</div>
     </div>`).join('');
-  const caseAudit = auditLog.filter(a => a.case_num === c.num).slice(0, 5);
+
+  const caseAudit = auditLog.filter(a => a.case_num === c.num).slice(0,5);
   const icons     = { ADD:'➕', EDIT:'✎', DELETE:'✕' };
   document.getElementById('view-audit-trail').innerHTML = caseAudit.length === 0
     ? '<span style="font-size:12px;color:var(--text-light)">No audit records</span>'
     : caseAudit.map(a => `<div class="audit-chip">${icons[a.action] || '•'} ${a.action} by ${esc(a.performed_by_name || '?')} · ${new Date(a.performed_at).toLocaleString()}</div><br>`).join('');
+
   document.getElementById('view-modal').classList.add('open');
 }
 
@@ -1039,30 +959,16 @@ function updateAll() {
 // SUPABASE
 // ══════════════════════════════════════════════
 const _ck = 'legalaid_v3_secure';
-function _xor(str, key) {
-  return str.split('').map((c,i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join('');
-}
+function _xor(str, key) { return str.split('').map((c,i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''); }
 function _enc(str) { return btoa(_xor(str, _ck)); }
 function _dec(str) { try { return _xor(atob(str), _ck); } catch(e) { return ''; } }
 
 function saveSbCreds() {
   const url = document.getElementById('sb-url').value.trim();
   const key = document.getElementById('sb-key').value.trim();
-  if (url && key) {
-    localStorage.setItem(SB_CREDS_KEY, JSON.stringify({ u: _enc(url), k: _enc(key) }));
-  }
+  if (url && key) localStorage.setItem(SB_CREDS_KEY, JSON.stringify({ u: _enc(url), k: _enc(key) }));
 }
 
-function openGuidanceInbox() {
-  if (unreadCaseIds.size === 0) {
-    showToast('No unread guidance messages', '');
-    return;
-  }
-  // Open each unread case in its own tab
-  [...unreadCaseIds].forEach(caseId => {
-    openGuidanceDirect(caseId);
-  });
-}
 function loadSbCreds() {
   try {
     const r = localStorage.getItem(SB_CREDS_KEY);
@@ -1098,11 +1004,19 @@ function updateSbUI() {
   const clearLocal  = document.getElementById('clear-local-btn');
   const clearLocked = document.getElementById('danger-zone-locked');
   if (clearLocal)  clearLocal.style.display  = isAdmin ? 'inline-flex' : 'none';
-  if (clearLocked) clearLocked.style.display = isAdmin ? 'none'        : 'block';
+  if (clearLocked) clearLocked.style.display = isAdmin ? 'none' : 'block';
   ['filter-settlement','coord-filter-settlement','admin-filter-settlement'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isElevated ? '' : 'none';
   });
+}
+
+function updateDbUI() {
+  const connected = !!sbClient && !!currentUser;
+  const banner = document.getElementById('connect-banner');
+  if (banner) banner.style.display = connected ? 'none' : 'flex';
+  const statusBar = document.getElementById('db-status');
+  if (statusBar) statusBar.style.display = connected ? 'none' : 'block';
 }
 
 async function connectSupabase() {
@@ -1126,68 +1040,46 @@ async function connectSupabase() {
   }
 }
 
-function disconnectSupabase() {
-  sbClient = null; setSbStatus('off','Offline'); updateSbUI(); showToast('Disconnected','');
-}
+function disconnectSupabase() { sbClient = null; setSbStatus('off','Offline'); updateSbUI(); showToast('Disconnected',''); }
 
 function caseToRow(c) {
   const rawDob  = c.dob || '';
   const safeDob = /^\d{4}-\d{2}-\d{2}$/.test(rawDob) ? rawDob : null;
   return {
-    num:              c.num            || '',
-    name:             c.name           || '',
-    id_number:        c.idNumber       || '',
-    date_of_birth:    safeDob,
-    tribe:            c.tribe          || '',
-    village:          c.village        || '',
-    address:          c.address        || '',
-    type:             c.type           || '',
-    description:      c.desc           || '',
-    assistance:       c.assist         || '',
-    case_date:         c.caseDate     || null,
-   employment_status: c.employStatus || '',
-    status:           ['Ongoing','Pending','Closed'].includes(c.status) ? c.status : 'Ongoing',
-    contacts:         c.contacts       || '',
-    updated_at:       new Date().toISOString(),
-    created_by:       c.createdBy      || null,
-    created_by_name:  c.createdByName  || '',
-    updated_by:       c.updatedBy      || null,
-    updated_by_name:  c.updatedByName  || ''
+    num: c.num || '', name: c.name || '',
+    id_number: c.idNumber || '', date_of_birth: safeDob,
+    tribe: c.tribe || '', village: c.village || '', address: c.address || '',
+    type: c.type || '', description: c.desc || '', assistance: c.assist || '',
+    case_date: c.caseDate || null, employment_status: c.employStatus || '',
+    status: ['Ongoing','Pending','Closed'].includes(c.status) ? c.status : 'Ongoing',
+    contacts: c.contacts || '',
+    updated_at: new Date().toISOString(),
+    created_by: c.createdBy || null, created_by_name: c.createdByName || '',
+    updated_by: c.updatedBy || null, updated_by_name: c.updatedByName || ''
   };
 }
 
 function rowToCase(r) {
   return {
-    _id:            r.id,
-    num:            r.num,
-    name:           r.name,
-    idNumber:       r.id_number       || '',
-    dob:            r.date_of_birth   || '',
-    tribe:          r.tribe           || '',
-    village:        r.village         || '',
-    address:        r.address         || '',
-    type:           r.type            || '',
-    desc:           r.description     || '',
-    assist:         r.assistance      || '',
-    caseDate:     r.case_date         || '',
-    employStatus: r.employment_status || '',
-    status:         r.status          || 'Ongoing',
-    contacts:       r.contacts        || '',
-    createdAt:      r.created_at,
-    createdBy:      r.created_by,
-    createdByName:  r.created_by_name || '',
-    updatedAt:      r.updated_at,
-    updatedBy:      r.updated_by,
-     updatedByName:   r.updated_by_name || '',
-    needsGuidance:   r.needs_guidance  || false
+    _id: r.id, num: r.num, name: r.name,
+    idNumber: r.id_number || '', dob: r.date_of_birth || '',
+    tribe: r.tribe || '', village: r.village || '', address: r.address || '',
+    type: r.type || '', desc: r.description || '', assist: r.assistance || '',
+    caseDate: r.case_date || '', employStatus: r.employment_status || '',
+    status: r.status || 'Ongoing', contacts: r.contacts || '',
+    createdAt: r.created_at, createdBy: r.created_by, createdByName: r.created_by_name || '',
+    updatedAt: r.updated_at, updatedBy: r.updated_by, updatedByName: r.updated_by_name || '',
+    needsGuidance: r.needs_guidance || false
   };
 }
+
 async function openGuidanceDirect(caseId) {
   if (!caseId) { showToast('This case has not synced yet — save it online first.', 'error'); return; }
-  await markRead(caseId); // ← now writes to DB
+  await markRead(caseId);
   updateAll();
   window.open('case-guidance.html?case=' + caseId, '_blank');
 }
+
 async function pullFromSupabase() {
   if (!sbClient || !currentUser) return;
   setSbStatus('syncing','Pulling...');
@@ -1196,11 +1088,8 @@ async function pullFromSupabase() {
     if (error) throw error;
     cases = data.map(rowToCase);
 
-    // Always write to Excel after pull so offline copy stays current
-    if (dbFileHandle) await writeToFile();
-
-    // Always update offline cache after pull
-    saveCache({ cases, auditLog });
+    // Mirror to IndexedDB for offline access
+    await idbSaveCases(cases);
 
     updateAll();
     await loadAllProfiles();
@@ -1228,10 +1117,7 @@ async function pushAllToSupabase() {
       let pushed = 0, failed = 0;
       for (const c of cases) {
         const row = caseToRow(c);
-        if (!row.created_by) {
-          row.created_by      = currentUser.id;
-          row.created_by_name = row.created_by_name || currentUserName;
-        }
+        if (!row.created_by) { row.created_by = currentUser.id; row.created_by_name = row.created_by_name || currentUserName; }
         const { data, error } = await sbClient.from('cases').insert(row).select().single();
         if (error) { console.warn('Failed to push case', c.num, ':', error.message); failed++; }
         else { c._id = data.id; pushed++; }
@@ -1246,13 +1132,11 @@ async function pushAllToSupabase() {
   } catch(e) { setSbStatus('error','Push failed'); showToast('Push error: ' + e.message,'error'); }
 }
 
-// ── Auto-refresh when app comes back into focus ──
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && sbClient && currentUser && !isOffline) {
     await pullFromSupabase();
   }
 });
-
 
 async function syncCaseToSupabase(c, mode) {
   if (!sbClient) return;
@@ -1271,7 +1155,6 @@ async function syncCaseToSupabase(c, mode) {
     setSbStatus('connected','Connected');
     const ls = document.getElementById('sb-last-sync');
     if (ls) { ls.textContent = '✓ Synced ' + now; ls.style.display = 'block'; }
-    setDbStatus('✓ Saved to Supabase + Excel at ' + now,'success');
   } catch(e) { setSbStatus('error','Sync failed'); showToast('Sync error: ' + e.message,'error'); }
 }
 
@@ -1292,16 +1175,14 @@ async function clearSupabaseData() {
 }
 
 // ══════════════════════════════════════════════
-// EXCEL
+// EXCEL — DOWNLOAD ONLY (no file linking)
 // ══════════════════════════════════════════════
-const EXCEL_HANDLE_KEY = 'legalaid_excel_handle_v3';
-
 function buildWorkbook() {
   const wb  = XLSX.utils.book_new();
-  const hdr = ['Case No.','Full Names','ID Number','Date of Birth','Tribe','Village','Address','Case Type','Description','Date of Case','Employment Status','Assistance','Status','Contacts','Created By','Last Edited By'];
-  const rows = cases.map(c => [c.num,c.name,c.idNumber,c.dob,c.tribe,c.caseDate || '', c.employStatus || '',c.village,c.address,c.type,c.desc,c.assist,c.status,c.contacts,c.createdByName,c.updatedByName]);
+  const hdr = ['Case No.','Full Names','ID Number','Date of Birth','Tribe','Village','Address','Case Type','Date of Case','Employment Status','Description','Assistance','Status','Contacts','Created By','Last Edited By'];
+  const rows = cases.map(c => [c.num,c.name,c.idNumber,c.dob,c.tribe,c.village,c.address,c.type,c.caseDate||'',c.employStatus||'',c.desc,c.assist,c.status,c.contacts,c.createdByName,c.updatedByName]);
   const ws  = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
-  ws['!cols'] = [10,26,16,14,14,18,22,18,36,32,12,20,18,18].map(w => ({ wch: w }));
+  ws['!cols'] = [10,26,16,14,14,18,22,18,14,16,36,32,12,20,18,18].map(w => ({ wch: w }));
   const ws2 = XLSX.utils.aoa_to_sheet([
     ['Metric','Count'],
     ['Total',   cases.length],
@@ -1314,345 +1195,60 @@ function buildWorkbook() {
   return wb;
 }
 
-function parseWorkbook(wb) {
-  const ws   = wb.Sheets[wb.SheetNames[0]];
-  const data = XLSX.utils.sheet_to_json(ws, { header:1 });
-  if (data.length < 2) return [];
-
-  const hdr = data[0].map(h => String(h || '').toLowerCase().trim());
-  const col  = name => {
-    const variants = {
-      num:           ['case no.','case number','case no','num','case_no'],
-      name:          ['full names','name','full name'],
-      idNumber:      ['id no.','id number','id no','id_number','national id'],
-      dob:           ['date of birth','dob','date_of_birth','birth date'],
-      tribe:         ['tribe'],
-      village:       ['village','village / settlement','village/settlement','settlement'],
-      address:       ['home address / ward','address','ward','home address'],
-      type:          ['case type','type'],
-      desc:          ['brief description','description','desc'],
-      assist:        ['assistance given','assist given','assistance'],
-      status:        ['case status','status'],
-      contacts:      ['contacts','contact'],
-      createdByName: ['created by','officer'],
-      updatedByName: ['last edited by','edited by','updated by'],
-    };
-    const keys = variants[name] || [name];
-    for (const k of keys) { const idx = hdr.indexOf(k); if (idx !== -1) return idx; }
-    return -1;
-  };
-
-  const hasHeaders = hdr.some(h => ['case no.','case number','full names','name'].includes(h));
-
-  if (hasHeaders) {
-    return data.slice(1).filter(r => r[col('num')] || r[col('name')]).map(r => {
-      const rawDob  = String(r[col('dob')] || '').trim();
-      const safeDob = /^\d{4}-\d{2}-\d{2}$/.test(rawDob) ? rawDob : '';
-      return {
-        num:           String(r[col('num')]           || ''),
-        name:          String(r[col('name')]          || ''),
-        idNumber:      String(r[col('idNumber')]      || ''),
-        dob:           safeDob,
-        tribe:         String(r[col('tribe')]         || ''),
-        village:       String(r[col('village')]       || ''),
-        address:       String(r[col('address')]       || ''),
-        type:          String(r[col('type')]          || 'Other'),
-        desc:          String(r[col('desc')]          || ''),
-        assist:        String(r[col('assist')]        || ''),
-        status:        ['Ongoing','Pending','Closed'].includes(r[col('status')]) ? r[col('status')] : 'Ongoing',
-        contacts:      String(r[col('contacts')]      || ''),
-        createdByName: String(r[col('createdByName')] || ''),
-        updatedByName: String(r[col('updatedByName')] || ''),
-      };
-    });
-  } else {
-    return data.slice(1).filter(r => r[0] || r[1]).map(r => ({
-      num:'', name:String(r[1]||''), idNumber:'', dob:'',
-      tribe:String(r[2]||''), village:'', address:'',
-      type:String(r[3]||'Other'), desc:String(r[4]||''), assist:String(r[5]||''),
-      status:['Ongoing','Pending','Closed'].includes(r[6]) ? r[6] : 'Ongoing',
-      contacts:String(r[7]||''), createdByName:'', updatedByName:'',
-    }));
-  }
-}
-
-async function writeToFile() {
-  if (!dbFileHandle) return;
-  try {
-    const buf = XLSX.write(buildWorkbook(), { type:'array', bookType:'xlsx' });
-    const w   = await dbFileHandle.createWritable();
-    await w.write(new Blob([buf]));
-    await w.close();
-    const now = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-    setDbStatus('✓ Saved to ' + dbFileHandle.name + ' at ' + now,'success');
-  } catch(e) { setDbStatus('⚠ Write failed: ' + e.message,'error'); }
-}
-
-async function openExcelDatabase() {
-  if (HAS_FSA) {
-    try {
-      const [h] = await window.showOpenFilePicker({ types:[{ description:'Excel', accept:{ 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx'] } }] });
-      dbFileHandle = h;
-      await idbSet(EXCEL_HANDLE_KEY, h);
-      const f   = await h.getFile();
-      const buf = await f.arrayBuffer();
-      const wb  = XLSX.read(buf, { type:'array' });
-
-      // Merge loaded Excel data with current in-memory cases (don't overwrite)
-      const loadedCases  = parseWorkbook(wb);
-      const mergedCases  = mergeLocalCases(cases, loadedCases);
-      cases = mergedCases;
-
-      setDbStatus('📂 Connected: ' + h.name + ' (' + cases.length + ' cases)','success');
-      showToast(cases.length + ' cases loaded from ' + h.name,'success');
-      updateAll(); updateDbUI();
-    } catch(e) { if (e.name !== 'AbortError') showToast('Error: ' + e.message,'error'); }
-  } else { document.getElementById('open-file-input').click(); }
-}
-
-// Merge two case arrays — local (in-memory) takes priority over imported
-function mergeLocalCases(inMemory, fromFile) {
-  const byNum = {};
-  // Start with file cases as base
-  fromFile.forEach(c => { if (c.num) byNum[c.num] = c; });
-  // Overlay in-memory cases (they are more recent / authoritative)
-  inMemory.forEach(c => { if (c.num) byNum[c.num] = c; });
-  // Also add any file cases that have no case number (shouldn't happen but be safe)
-  fromFile.filter(c => !c.num).forEach(c => byNum['_' + Math.random()] = c);
-  return Object.values(byNum);
-}
-
-async function createExcelDatabase() {
-  if (HAS_FSA) {
-    try {
-      const h = await window.showSaveFilePicker({ suggestedName:'case_register.xlsx', types:[{ description:'Excel', accept:{ 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx'] } }] });
-      dbFileHandle = h;
-      await idbSet(EXCEL_HANDLE_KEY, h);
-      const buf = XLSX.write(buildWorkbook(), { type:'array', bookType:'xlsx' });
-      const w   = await h.createWritable(); await w.write(new Blob([buf])); await w.close();
-      setDbStatus('✓ Created: ' + h.name,'success');
-      showToast('New Excel file created: ' + h.name,'success');
-      updateDbUI();
-    } catch(e) { if (e.name !== 'AbortError') showToast('Error: ' + e.message,'error'); }
-  } else { exportFallback(); }
-}
-
-function disconnectDatabase() {
-  dbFileHandle = null;
-  idbDelete(EXCEL_HANDLE_KEY);
-  updateDbUI();
-  setDbStatus('Excel file disconnected','');
-}
-
-async function saveToDatabase() {
-  if (dbFileHandle) await writeToFile();
-}
-
-function handleOpenFileFallback(e) {
-  const file = e.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    try {
-      const wb          = XLSX.read(ev.target.result, { type:'array' });
-      const loadedCases = parseWorkbook(wb);
-      cases             = mergeLocalCases(cases, loadedCases);
-      setDbStatus('📂 Loaded: ' + file.name,'warn');
-      showToast(cases.length + ' cases loaded','success');
-      updateAll(); updateDbUI();
-    } catch(err) { showToast('Could not read file','error'); }
-  };
-  reader.readAsArrayBuffer(file);
-}
-
 function exportFallback() {
   const date = new Date().toISOString().slice(0,10);
   XLSX.writeFile(buildWorkbook(), 'case_register_' + date + '.xlsx');
   showToast('Excel downloaded','success');
 }
 
-function setDbStatus(msg, type='') {
-  const el = document.getElementById('db-status'); if (!el) return;
-  el.textContent  = msg;
-  el.className    = 'db-status-bar' + (type ? ' ' + type : '');
-}
-
-function updateDbUI() {
-  const con = !!dbFileHandle;
-  ['db-connect-btn','db-create-btn'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = con ? 'none' : 'inline-flex'; });
-  ['db-disconnect-btn'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = con ? 'inline-flex' : 'none'; });
-  const banner = document.getElementById('connect-banner');
-  if (banner) banner.style.display = (!!sbClient && !!dbFileHandle) ? 'none' : 'flex';
-  const lbl = document.getElementById('excel-file-label');
-  if (lbl) lbl.textContent = con ? ('📂 Connected: ' + (dbFileHandle.name || 'file')) : '⚠ No Excel file connected';
-}
-
-// ── AUTO-CONNECT EXCEL ──
-async function autoConnectExcel() {
-  if (!HAS_FSA) return;
-  try {
-    const stored = await idbGet(EXCEL_HANDLE_KEY);
-    if (stored) {
-      const perm = await stored.queryPermission({ mode:'readwrite' });
-      if (perm === 'granted') {
-        dbFileHandle    = stored;
-        const file      = await stored.getFile();
-        const buf       = await file.arrayBuffer();
-        const wb        = XLSX.read(buf, { type:'array' });
-        const fromFile  = parseWorkbook(wb);
-        cases           = mergeLocalCases(cases, fromFile);
-        setDbStatus('✓ Auto-connected: ' + stored.name + ' (' + cases.length + ' cases)','success');
-        updateAll(); updateDbUI();
-        showToast('Excel auto-connected: ' + stored.name,'success');
-        return true;
-      } else if (perm === 'prompt') {
-        const req = await stored.requestPermission({ mode:'readwrite' });
-        if (req === 'granted') {
-          dbFileHandle   = stored;
-          const file     = await stored.getFile();
-          const buf      = await file.arrayBuffer();
-          const wb       = XLSX.read(buf, { type:'array' });
-          const fromFile = parseWorkbook(wb);
-          cases          = mergeLocalCases(cases, fromFile);
-          setDbStatus('✓ Reconnected: ' + stored.name,'success');
-          updateAll(); updateDbUI();
-          return true;
-        }
-      }
-    }
-  } catch(e) { console.warn('Auto-connect failed:', e.message); }
-  setDbStatus('⚠ No Excel file connected — click Connect File or Create New in the Database tab','warn');
-  return false;
-}
-
-// ── INDEXEDDB helpers ──
-function idbGet(key) {
-  return new Promise(resolve => {
-    try {
-      const req = indexedDB.open('legalaid_db', 1);
-      req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
-      req.onsuccess = e => {
-        const tx = e.target.result.transaction('handles','readonly');
-        const r2 = tx.objectStore('handles').get(key);
-        r2.onsuccess = () => resolve(r2.result || null);
-        r2.onerror   = () => resolve(null);
-      };
-      req.onerror = () => resolve(null);
-    } catch(e) { resolve(null); }
-  });
-}
-
-function idbSet(key, value) {
-  return new Promise(resolve => {
-    try {
-      const req = indexedDB.open('legalaid_db', 1);
-      req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
-      req.onsuccess = e => {
-        const tx = e.target.result.transaction('handles','readwrite');
-        tx.objectStore('handles').put(value, key);
-        tx.oncomplete = () => resolve(true);
-        tx.onerror    = () => resolve(false);
-      };
-      req.onerror = () => resolve(false);
-    } catch(e) { resolve(false); }
-  });
-}
-
-function idbDelete(key) {
-  return new Promise(resolve => {
-    try {
-      const req = indexedDB.open('legalaid_db', 1);
-      req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
-      req.onsuccess = e => {
-        const tx = e.target.result.transaction('handles','readwrite');
-        tx.objectStore('handles').delete(key);
-        tx.oncomplete = () => resolve(true);
-        tx.onerror    = () => resolve(false);
-      };
-    } catch(e) { resolve(false); }
-  });
-}
-
 async function clearAllData() {
   if (currentUserRole !== 'admin') { showToast('Admin access only','error'); return; }
-  if (!confirm('Clear all local cases?')) return;
-  cases = []; updateAll(); saveToDatabase(); showToast('Local data cleared','error');
+  if (!confirm('Clear all local cases from this device?')) return;
+  cases = [];
+  await idbSaveCases([]);
+  updateAll();
+  showToast('Local data cleared','error');
 }
-
-
 
 // ══════════════════════════════════════════════
 // ADMIN PANEL
 // ══════════════════════════════════════════════
 let editingUserId = null;
-// ══════════════════════════════════════════════
-// ADMIN: CREATE USER (via Edge Function)
-// ══════════════════════════════════════════════
 const CREATE_USER_FN_URL = 'https://rsfpqgctxuiawcoglede.supabase.co/functions/v1/create-user';
 
 async function adminCreateUser() {
   if (currentUserRole !== 'admin') { showToast('Admin access only', 'error'); return; }
   const err = document.getElementById('au-error');
   err.classList.remove('show');
-
   const name       = document.getElementById('au-name').value.trim();
   const email      = document.getElementById('au-email').value.trim();
   const password   = document.getElementById('au-password').value;
   const role       = document.getElementById('au-role').value;
   const settlement = document.getElementById('au-settlement').value.trim();
-
-  if (!name || !email || !password) {
-    err.textContent = 'Name, email and password are required';
-    err.classList.add('show');
-    return;
-  }
-  if (password.length < 6) {
-    err.textContent = 'Password must be at least 6 characters';
-    err.classList.add('show');
-    return;
-  }
-
+  if (!name || !email || !password) { err.textContent = 'Name, email and password are required'; err.classList.add('show'); return; }
+  if (password.length < 6) { err.textContent = 'Password must be at least 6 characters'; err.classList.add('show'); return; }
   const btn = document.getElementById('au-submit-btn');
-  btn.disabled = true;
-  btn.textContent = 'Creating...';
-
+  btn.disabled = true; btn.textContent = 'Creating...';
   try {
     const { data: { session } } = await sbClient.auth.getSession();
     if (!session) throw new Error('Your session has expired — please sign in again.');
-
     const res = await fetch(CREATE_USER_FN_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + session.access_token,
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
       body: JSON.stringify({ name, email, password, role, settlement }),
     });
-
     const result = await res.json();
     if (!res.ok) throw new Error(result.error || 'Failed to create user');
-
     showToast('User "' + name + '" created successfully', 'success');
-    document.getElementById('au-name').value        = '';
-    document.getElementById('au-email').value       = '';
-    document.getElementById('au-password').value    = '';
-    document.getElementById('au-settlement').value  = '';
-    document.getElementById('au-role').value        = 'officer';
-
-    await sbClient.from('audit_log').insert({
-      action: 'USER_CREATE', case_num: null,
-      performed_by: currentUser.id, performed_by_name: currentUserName,
-      performed_at: new Date().toISOString(),
-      details: { new_user_email: email, new_user_name: name, role }
-    });
-
+    document.getElementById('au-name').value = '';
+    document.getElementById('au-email').value = '';
+    document.getElementById('au-password').value = '';
+    document.getElementById('au-settlement').value = '';
+    document.getElementById('au-role').value = 'officer';
+    await sbClient.from('audit_log').insert({ action:'USER_CREATE', case_num:null, performed_by:currentUser.id, performed_by_name:currentUserName, performed_at:new Date().toISOString(), details:{ new_user_email:email, new_user_name:name, role } });
     await loadAdminUsers();
-  } catch (e) {
-    err.textContent = e.message;
-    err.classList.add('show');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '✨ Create User';
-  }
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); }
+  finally { btn.disabled = false; btn.textContent = '✨ Create User'; }
 }
 
 async function loadAdminUsers() {
@@ -1662,13 +1258,10 @@ async function loadAdminUsers() {
     const { data: profiles, error } = await sbClient.from('user_profiles').select('*').order('created_at', { ascending: true });
     if (error) throw error;
     allProfiles = profiles || [];
-
     const { data: caseCounts } = await sbClient.from('cases').select('created_by, village');
-    const settlementUserIds   = allProfiles
-      .filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase())
-      .map(p => p.id);
-    const filteredCaseCounts  = fset ? (caseCounts||[]).filter(c => settlementUserIds.includes(c.created_by)) : (caseCounts||[]);
-    const visibleProfiles     = fset ? allProfiles.filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase()) : allProfiles;
+    const settlementUserIds  = allProfiles.filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase()).map(p => p.id);
+    const filteredCaseCounts = fset ? (caseCounts||[]).filter(c => settlementUserIds.includes(c.created_by)) : (caseCounts||[]);
+    const visibleProfiles    = fset ? allProfiles.filter(p => p.settlement && p.settlement.trim().toLowerCase() === fset.toLowerCase()) : allProfiles;
 
     document.getElementById('admin-total-users').textContent  = visibleProfiles.length;
     document.getElementById('admin-officers').textContent     = visibleProfiles.filter(p => p.role==='officer').length;
@@ -1684,15 +1277,14 @@ async function loadAdminUsers() {
     filteredCaseCounts.forEach(r => { if (r.created_by) countMap[r.created_by] = (countMap[r.created_by]||0)+1; });
 
     visibleProfiles.forEach(p => {
-      const isMe     = p.id === currentUser.id;
+      const isMe      = p.id === currentUser.id;
       const caseCount = countMap[p.id] || 0;
-      const joined   = p.created_at ? new Date(p.created_at).toLocaleDateString('en-GB') : '—';
+      const joined    = p.created_at ? new Date(p.created_at).toLocaleDateString('en-GB') : '—';
       const roleBadge = {
         officer:     '<span style="background:#dbeafe;color:#1a4a8a;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600">Officer</span>',
         coordinator: '<span style="background:#fef7e6;color:#8a5c00;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600">Coordinator</span>',
         admin:       '<span style="background:#f3e8ff;color:#6b21a8;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600">Admin</span>',
       }[p.role] || p.role;
-
       tbody.insertAdjacentHTML('beforeend', `<tr>
         <td class="name-cell">${esc(p.full_name||'—')} ${isMe ? '<span style="font-size:10px;color:var(--text-muted)">(you)</span>' : ''}</td>
         <td style="font-size:12px;color:var(--text-muted)">${esc(p.email||'—')}</td>
@@ -1700,31 +1292,24 @@ async function loadAdminUsers() {
         <td style="font-size:12px;color:var(--text-muted)">${esc(p.settlement||'—')}</td>
         <td style="text-align:center;font-weight:600;color:var(--navy)">${caseCount}</td>
         <td style="font-size:12px;color:var(--text-muted)">${joined}</td>
-        <td>
-          ${isMe ? '<span style="font-size:12px;color:var(--text-light)">—</span>'
-            : `<select onchange="changeUserRole('${p.id}', this.value, this)"
-                style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;background:var(--cream)">
-                <option value="officer"     ${p.role==='officer'     ? 'selected':''}>Officer</option>
-                <option value="coordinator" ${p.role==='coordinator' ? 'selected':''}>Coordinator</option>
-                <option value="admin"       ${p.role==='admin'       ? 'selected':''}>Admin</option>
-              </select>`}
-        </td>
-        <td>
-          <div style="display:flex;gap:5px">
-            <button class="btn btn-outline btn-sm" onclick="openEditUserModal('${p.id}')">✎ Edit</button>
-            ${isMe
-              ? '<span style="font-size:11px;color:var(--text-light);padding:4px">Cannot delete self</span>'
-              : `<button class="btn btn-danger btn-sm" onclick="deleteUser('${p.id}','${esc(p.full_name||p.email)}')">✕ Delete</button>`}
-          </div>
-        </td>
-      </tr>`);
+        <td>${isMe ? '<span style="font-size:12px;color:var(--text-light)">—</span>'
+          : `<select onchange="changeUserRole('${p.id}', this.value, this)" style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;background:var(--cream)">
+              <option value="officer"     ${p.role==='officer'     ? 'selected':''}>Officer</option>
+              <option value="coordinator" ${p.role==='coordinator' ? 'selected':''}>Coordinator</option>
+              <option value="admin"       ${p.role==='admin'       ? 'selected':''}>Admin</option>
+             </select>`}</td>
+        <td><div style="display:flex;gap:5px">
+          <button class="btn btn-outline btn-sm" onclick="openEditUserModal('${p.id}')">✎ Edit</button>
+          ${isMe
+            ? '<span style="font-size:11px;color:var(--text-light);padding:4px">Cannot delete self</span>'
+            : `<button class="btn btn-danger btn-sm" onclick="deleteUser('${p.id}','${esc(p.full_name||p.email)}')">✕ Delete</button>`}
+        </div></td></tr>`);
     });
   } catch(e) { showToast('Error loading users: ' + e.message,'error'); }
 }
 
 async function changeUserRole(userId, newRole, selectEl) {
   if (currentUserRole !== 'admin') { showToast('Admin only','error'); return; }
-  const original = selectEl.getAttribute('data-original') || selectEl.value;
   try {
     const { error } = await sbClient.from('user_profiles').update({ role: newRole, updated_at: new Date().toISOString() }).eq('id', userId);
     if (error) throw error;
@@ -1732,42 +1317,32 @@ async function changeUserRole(userId, newRole, selectEl) {
     showToast('Role updated to ' + newRole,'success');
     const p = allProfiles.find(x => x.id === userId);
     if (p) p.role = newRole;
-    document.getElementById('admin-officers').textContent     = allProfiles.filter(p=>p.role==='officer').length;
-    document.getElementById('admin-coordinators').textContent = allProfiles.filter(p=>p.role==='coordinator').length;
     await sbClient.from('audit_log').insert({ action:'ROLE_CHANGE', case_num:null, performed_by:currentUser.id, performed_by_name:currentUserName, performed_at:new Date().toISOString(), details:{ user_id:userId, new_role:newRole } });
-  } catch(e) { showToast('Error: ' + e.message,'error'); selectEl.value = original; }
+  } catch(e) { showToast('Error: ' + e.message,'error'); }
 }
 
-
-// ── TOPBAR MESSAGE BADGE ──
 function updateTopbarMsgBadge() {
   const count = unreadCaseIds.size;
   const btn   = document.getElementById('topbar-msg-btn');
   const badge = document.getElementById('topbar-msg-badge');
   if (!btn || !badge) return;
   btn.style.display = 'inline-flex';
-  if (count > 0) {
-    badge.textContent   = count;
-    badge.style.display = 'flex';
-  } else {
-    badge.style.display = 'none';
-  }
+  if (count > 0) { badge.textContent = count; badge.style.display = 'flex'; }
+  else { badge.style.display = 'none'; }
 }
+
 function openEditUserModal(userId) {
   const p = allProfiles.find(x => x.id === userId); if (!p) return;
   editingUserId = userId;
-  document.getElementById('edit-user-sub').textContent = p.email;
-  document.getElementById('eu-name').value             = p.full_name  || '';
-  document.getElementById('eu-email').value            = p.email      || '';
-  document.getElementById('eu-role').value             = p.role       || 'officer';
-  document.getElementById('eu-settlement').value       = p.settlement || '';
+  document.getElementById('edit-user-sub').textContent  = p.email;
+  document.getElementById('eu-name').value              = p.full_name  || '';
+  document.getElementById('eu-email').value             = p.email      || '';
+  document.getElementById('eu-role').value              = p.role       || 'officer';
+  document.getElementById('eu-settlement').value        = p.settlement || '';
   document.getElementById('edit-user-modal').classList.add('open');
 }
 
-function closeEditUserModal() {
-  document.getElementById('edit-user-modal').classList.remove('open');
-  editingUserId = null;
-}
+function closeEditUserModal() { document.getElementById('edit-user-modal').classList.remove('open'); editingUserId = null; }
 
 async function saveEditUser() {
   if (!editingUserId || currentUserRole !== 'admin') return;
@@ -1807,22 +1382,15 @@ async function loadSettlementFilter() {
   if (!sbClient || !currentUser) return;
   try {
     const { data: profiles, error } = await sbClient.from('user_profiles').select('settlement, full_name, role');
-    if (error) { console.warn('Settlement fetch error:', error.message); return; }
-    if (!profiles || profiles.length === 0) return;
-
+    if (error || !profiles || profiles.length === 0) return;
     const withSettlement = profiles.filter(p => p.settlement && p.settlement.trim() !== '');
     if (withSettlement.length === 0) return;
-
     const seen = new Set(), opts = [];
     withSettlement.forEach(p => {
       const key = p.settlement.trim().toLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        opts.push({ value: p.settlement.trim(), label: p.settlement.trim() + ' (' + (p.full_name||'Unknown') + ')' });
-      }
+      if (!seen.has(key)) { seen.add(key); opts.push({ value: p.settlement.trim(), label: p.settlement.trim() + ' (' + (p.full_name||'Unknown') + ')' }); }
     });
     opts.sort((a,b) => a.label.localeCompare(b.label));
-
     ['filter-settlement','coord-filter-settlement','admin-filter-settlement'].forEach(id => {
       const sel = document.getElementById(id); if (!sel) return;
       sel.innerHTML = '<option value="">All settlements</option>';
@@ -1836,7 +1404,7 @@ async function loadAllProfiles() {
   try {
     const { data, error } = await sbClient.from('user_profiles').select('id, full_name, role, settlement');
     if (!error && data) allProfiles = data;
-  } catch(e) { console.warn('loadAllProfiles error:', e.message); }
+  } catch(e) {}
 }
 
 // ══════════════════════════════════════════════
@@ -1846,24 +1414,13 @@ let aiSelCase = null;
 const AI_SYS  = `You are a legal case analyst for Ditshwanelo — The Botswana Centre for Human Rights. Analyse case data and produce clear, professional insights. Use **bold** for headings and key points. Cite specific numbers. Be thorough but concise.`;
 
 function initAiPage() {
-  // Auto-load key — officers don't need to enter anything
   const k = ['gsk_','xx','xx','your','key','here'].join('');
   document.getElementById('ai-api-key').value = k;
   sessionStorage.setItem('ditsh_ai_key', k);
   aiRenderCaseGrid();
 }
-function aiSaveKey(v) {
-  if (v.trim()) sessionStorage.setItem('ditsh_ai_key', v.trim());
-  else sessionStorage.removeItem('ditsh_ai_key');
-}
-function aiGetKey() {
-  const parts = [
-    'gsk_y0a3', '37r1K7wH',
-    'roZOBRAy', 'WGdyb3FY',
-    'jVTlPNP1', 'w3zjoeBc', 'SR1m9bVX'
-  ];
-  return parts.join('');
-}
+function aiSaveKey(v) { if (v.trim()) sessionStorage.setItem('ditsh_ai_key', v.trim()); else sessionStorage.removeItem('ditsh_ai_key'); }
+function aiGetKey() { return ['gsk_y0a3','37r1K7wH','roZOBRAy','WGdyb3FY','jVTlPNP1','w3zjoeBc','SR1m9bVX'].join(''); }
 function aiTab(t) {
   ['overview','case','village','custom'].forEach(x => {
     document.getElementById('aitab-' + x).classList.toggle('active', x === t);
@@ -1879,36 +1436,8 @@ function aiDigest() {
     byType[c.type||'Unknown']       = (byType[c.type||'Unknown']||0)+1;
     byVillage[c.village||'Unknown'] = (byVillage[c.village||'Unknown']||0)+1;
   });
-
-  const summary = [
-    `Total cases: ${cases.length}`,
-    `Status breakdown: ${JSON.stringify(byStatus)}`,
-    `Case types: ${JSON.stringify(byType)}`,
-    `Villages (${Object.keys(byVillage).length}): ${JSON.stringify(byVillage)}`,
-    '',
-    '=== FULL CASE DETAILS ===',
-    ''
-  ].join('\n');
-
-  const fullCases = cases.map(c => [
-    `Case: ${c.num||'?'}`,
-    `Name: ${c.name||'?'}`,
-    `ID Number: ${c.idNumber||'—'}`,
-    `DOB: ${c.dob||'—'}`,
-    `Tribe: ${c.tribe||'—'}`,
-    `Village: ${c.village||'—'}`,
-    `Address: ${c.address||'—'}`,
-    `Contacts: ${c.contacts||'—'}`,
-    `Type: ${c.type||'—'}`,
-    `Status: ${c.status||'—'}`,
-    `Date of Case: ${c.caseDate||'—'}`,
-    `Employment Status: ${c.employStatus||'—'}`,
-    `Officer: ${c.createdByName||'—'}`,
-    `Description: ${c.desc||'—'}`,
-    `Assistance Given: ${c.assist||'—'}`,
-    '---'
-  ].join('\n')).join('\n');
-
+  const summary = [`Total cases: ${cases.length}`,`Status breakdown: ${JSON.stringify(byStatus)}`,`Case types: ${JSON.stringify(byType)}`,`Villages (${Object.keys(byVillage).length}): ${JSON.stringify(byVillage)}`,'','=== FULL CASE DETAILS ===',''].join('\n');
+  const fullCases = cases.map(c => [`Case: ${c.num||'?'}`,`Name: ${c.name||'?'}`,`ID Number: ${c.idNumber||'—'}`,`DOB: ${c.dob||'—'}`,`Tribe: ${c.tribe||'—'}`,`Village: ${c.village||'—'}`,`Address: ${c.address||'—'}`,`Contacts: ${c.contacts||'—'}`,`Type: ${c.type||'—'}`,`Status: ${c.status||'—'}`,`Date of Case: ${c.caseDate||'—'}`,`Employment Status: ${c.employStatus||'—'}`,`Officer: ${c.createdByName||'—'}`,`Description: ${c.desc||'—'}`,`Assistance Given: ${c.assist||'—'}`,'---'].join('\n')).join('\n');
   return summary + fullCases;
 }
 
@@ -1922,61 +1451,28 @@ async function aiCall(prompt, outId, ubarId, utxtId, btnId) {
   btn.classList.add('loading'); btn.disabled = true;
   const out = document.getElementById(outId);
   out.innerHTML = '<span class="scursor"></span>';
-  let full = '';
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
-        'Authorization': 'Bearer ' + key 
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 1500,
-        messages: [
-          { role: 'system', content: AI_SYS }, 
-          { role: 'user', content: prompt }
-        ]
-      })
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({ model:'llama-3.3-70b-versatile', max_tokens:1500, messages:[{ role:'system', content:AI_SYS },{ role:'user', content:prompt }] })
     });
-    if (!res.ok) { 
-      const e = await res.json().catch(() => ({ error: { message: res.statusText } })); 
-      throw new Error(e.error?.message || `HTTP ${res.status}`); 
-    }
+    if (!res.ok) { const e = await res.json().catch(() => ({ error:{ message:res.statusText } })); throw new Error(e.error?.message || `HTTP ${res.status}`); }
     const data = await res.json();
-    full = data.choices?.[0]?.message?.content || '';
+    const full = data.choices?.[0]?.message?.content || '';
     out.innerHTML = aiFmt(full);
-    const inTok  = data.usage?.prompt_tokens     || 0;
-    const outTok = data.usage?.completion_tokens || 0;
-    const ub = document.getElementById(ubarId);
-    const ut = document.getElementById(utxtId);
-    if (ub && ut) { 
-      ut.textContent = inTok + ' in · ' + outTok + ' out tokens'; 
-      ub.style.display = 'flex'; 
-    }
-  } catch(e) {
-    out.innerHTML = `<p style="color:var(--danger)">⚠️ <strong>Error:</strong> ${esc(e.message)}</p>`;
-  } finally { 
-    btn.classList.remove('loading'); 
-    btn.disabled = false; 
-  }
+    const inTok = data.usage?.prompt_tokens || 0, outTok = data.usage?.completion_tokens || 0;
+    const ub = document.getElementById(ubarId), ut = document.getElementById(utxtId);
+    if (ub && ut) { ut.textContent = inTok + ' in · ' + outTok + ' out tokens'; ub.style.display = 'flex'; }
+  } catch(e) { out.innerHTML = `<p style="color:var(--danger)">⚠️ <strong>Error:</strong> ${esc(e.message)}</p>`; }
+  finally { btn.classList.remove('loading'); btn.disabled = false; }
 }
 
 function aiFmt(t) {
-  return '<p>' + t
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    .replace(/^#{1,4}\s+(.+)$/gm,'<h4>$1</h4>')
-    .replace(/^[-•]\s+(.+)$/gm,'<li>$1</li>')
-    .replace(/(<li>[\s\S]*?<\/li>)/g,'<ul>$1</ul>')
-    .replace(/\n{2,}/g,'</p><p>')
-    .replace(/\n/g,'<br>')
-    + '</p>';
+  return '<p>' + t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/^#{1,4}\s+(.+)$/gm,'<h4>$1</h4>').replace(/^[-•]\s+(.+)$/gm,'<li>$1</li>').replace(/(<li>[\s\S]*?<\/li>)/g,'<ul>$1</ul>').replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>') + '</p>';
 }
 
-function aiCopy(id) {
-  navigator.clipboard.writeText(document.getElementById(id).innerText || '').then(() => showToast('Copied to clipboard','success')).catch(() => {});
-}
+function aiCopy(id) { navigator.clipboard.writeText(document.getElementById(id).innerText || '').then(() => showToast('Copied to clipboard','success')).catch(() => {}); }
 
 const aiOvPrompts = {
   full:    d => `Comprehensive analysis of this Ditshwanelo case register:\n\n${d}`,
@@ -1988,11 +1484,7 @@ const aiOvPrompts = {
 };
 const aiOvTitles = { full:'Case Register Overview', summary:'Executive Summary', trends:'Trends & Patterns', risk:'Risk Case Analysis', recs:'Recommendations', report:'Full Report' };
 
-function aiOverviewRun(mode) {
-  const t = aiOvTitles[mode] || 'Overview';
-  document.getElementById('ai-ov-title').textContent = t;
-  aiCall(aiOvPrompts[mode](aiDigest()), 'ai-ov-body','ai-ov-ubar','ai-ov-utxt','ai-ov-btn');
-}
+function aiOverviewRun(mode) { document.getElementById('ai-ov-title').textContent = aiOvTitles[mode] || 'Overview'; aiCall(aiOvPrompts[mode](aiDigest()), 'ai-ov-body','ai-ov-ubar','ai-ov-utxt','ai-ov-btn'); }
 
 const aiVlPrompts = {
   full:         d => `Geographic/village analysis of this case data:\n\n${d}`,
@@ -2002,9 +1494,7 @@ const aiVlPrompts = {
   underserved:  d => `Identify underserved villages where numbers are suspiciously low or unresolved cases suggest lack of resources.\n\n${d}`,
 };
 
-function aiVillageRun(mode) {
-  aiCall(aiVlPrompts[mode](aiDigest()), 'ai-vl-body','ai-vl-ubar','ai-vl-utxt','ai-vl-btn');
-}
+function aiVillageRun(mode) { aiCall(aiVlPrompts[mode](aiDigest()), 'ai-vl-body','ai-vl-ubar','ai-vl-utxt','ai-vl-btn'); }
 
 function aiRenderCaseGrid() {
   const grid = document.getElementById('ai-case-grid');
@@ -2027,22 +1517,52 @@ function aiSelectCase(i) {
 
 function aiCaseRun() {
   if (aiSelCase === null) return;
-  const c = cases[aiSelCase];
-  aiCall(
-    `Professional case brief for Ditshwanelo. Include: 1) Case Summary 2) Key Facts 3) Status Assessment 4) Recommended Next Steps 5) Red flags or urgent concerns.\n\n${aiCaseDetail(c)}`,
-    'ai-cs-body','ai-cs-ubar','ai-cs-utxt','ai-cs-btn'
-  );
+  aiCall(`Professional case brief for Ditshwanelo. Include: 1) Case Summary 2) Key Facts 3) Status Assessment 4) Recommended Next Steps 5) Red flags or urgent concerns.\n\n${aiCaseDetail(cases[aiSelCase])}`, 'ai-cs-body','ai-cs-ubar','ai-cs-utxt','ai-cs-btn');
 }
 
 function aiSetQ(q) { document.getElementById('ai-cq').value = q; }
-
 function aiCustomRun() {
   const q = document.getElementById('ai-cq').value.trim();
   if (!q) { showToast('Please type a question first','error'); return; }
-  aiCall(
-    `Analyse this Ditshwanelo case data and answer:\n\nQUESTION: ${q}\n\nDATA:\n${aiDigest()}`,
-    'ai-cq-body','ai-cq-ubar','ai-cq-utxt','ai-cq-btn'
+  aiCall(`Analyse this Ditshwanelo case data and answer:\n\nQUESTION: ${q}\n\nDATA:\n${aiDigest()}`, 'ai-cq-body','ai-cq-ubar','ai-cq-utxt','ai-cq-btn');
+}
+
+// ══════════════════════════════════════════════
+// UNREAD GUIDANCE
+// ══════════════════════════════════════════════
+async function markUnread(caseId) {
+  if (!sbClient || !currentUser) return;
+  await sbClient.from('guidance_unread').upsert(
+    { case_id:caseId, user_id:currentUser.id, unread:true, updated_at:new Date().toISOString() },
+    { onConflict:'case_id,user_id' }
   );
+  await loadUnreadCounts();
+}
+
+async function markRead(caseId) {
+  if (!sbClient || !currentUser) return;
+  await sbClient.from('guidance_unread').update({ unread:false, updated_at:new Date().toISOString() }).eq('case_id', caseId).eq('user_id', currentUser.id);
+  await loadUnreadCounts();
+}
+
+let unreadCaseIds = new Set();
+
+async function loadUnreadCounts() {
+  if (!sbClient || !currentUser) return;
+  try {
+    const { data, error } = await sbClient.from('guidance_unread').select('case_id').eq('user_id', currentUser.id).eq('unread', true);
+    if (error) throw error;
+    unreadCaseIds = new Set((data || []).map(r => r.case_id));
+    updateAll();
+    updateTopbarMsgBadge();
+  } catch(e) { console.warn('loadUnreadCounts error:', e.message); }
+}
+
+function getUnreadCount(caseId) { return unreadCaseIds.has(caseId) ? 1 : 0; }
+
+function openGuidanceInbox() {
+  if (unreadCaseIds.size === 0) { showToast('No unread guidance messages', ''); return; }
+  [...unreadCaseIds].forEach(caseId => openGuidanceDirect(caseId));
 }
 
 // ══════════════════════════════════════════════
@@ -2056,8 +1576,11 @@ function showToast(msg, type='') {
   setTimeout(() => t.remove(), 3500);
 }
 
-function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function openCaseGuidance() {
+  if (!window.currentViewCaseId) { alert('Open a case first.'); return; }
+  window.open('case-guidance.html?case=' + window.currentViewCaseId, '_blank');
 }
 
 // ══════════════════════════════════════════════
@@ -2067,86 +1590,17 @@ document.getElementById('case-modal').addEventListener('click',      e => { if (
 document.getElementById('view-modal').addEventListener('click',      e => { if (e.target === document.getElementById('view-modal'))      closeViewModal(); });
 document.getElementById('edit-user-modal').addEventListener('click', e => { if (e.target === document.getElementById('edit-user-modal')) closeEditUserModal(); });
 
-// Lock layout on startup
 document.querySelector('.layout').style.display = 'none';
-
 setSbStatus('off','Offline');
 updateSbUI();
 updateDbUI();
 
-// Pre-fill saved credentials
 const savedCreds = loadSbCreds();
 if (savedCreds) {
   document.getElementById('sb-url').value = savedCreds.url;
   document.getElementById('sb-key').value = savedCreds.key;
 }
-// ══════════════════════════════════════════════
-// UNREAD GUIDANCE NOTIFICATIONS
-// ══════════════════════════════════════════════
-// ══════════════════════════════════════════════
-// UNREAD GUIDANCE — database-backed
-// ══════════════════════════════════════════════
 
-// Called when a new comment arrives for a case we didn't write
-async function markUnread(caseId) {
-  if (!sbClient || !currentUser) {
-    console.warn('markUnread: no client or user');
-    return;
-  }
-  console.log('markUnread called for caseId:', caseId);
-  console.log('currentUser.id:', currentUser.id);
-
-  const { data, error } = await sbClient.from('guidance_unread').upsert(
-    { case_id: caseId, user_id: currentUser.id, unread: true, updated_at: new Date().toISOString() },
-    { onConflict: 'case_id,user_id' }
-  ).select();
-
-  console.log('markUnread result — data:', data, 'error:', error);
-  await loadUnreadCounts();
-}
-
-// Called when user opens the guidance thread for a case
-async function markRead(caseId) {
-  if (!sbClient || !currentUser) return;
-  await sbClient.from('guidance_unread')
-    .update({ unread: false, updated_at: new Date().toISOString() })
-    .eq('case_id', caseId)
-    .eq('user_id', currentUser.id);
-  await loadUnreadCounts(); // refresh badges
-}
-
-// In-memory cache of unread case IDs for fast badge rendering
-let unreadCaseIds = new Set();
-
-async function loadUnreadCounts() {
-  if (!sbClient || !currentUser) {
-    console.warn('loadUnreadCounts: no client or user');
-    return;
-  }
-
-  try {
-    const { data, error } = await sbClient
-      .from('guidance_unread')
-      .select('case_id')
-      .eq('user_id', currentUser.id)
-      .eq('unread', true);
-
-    if (error) throw error;
-    unreadCaseIds = new Set((data || []).map(r => r.case_id));
-    updateAll();
-    updateTopbarMsgBadge(); // ← add this
-  } catch(e) {
-    console.warn('loadUnreadCounts error:', e.message);
-  }
-}
-
-
-function getUnreadCount(caseId) {
-  return unreadCaseIds.has(caseId) ? 1 : 0;
-}
-
-
-// v3.1
 initAuth();
 document.getElementById('logo-auth').src    = LOGO_BASE64;
 document.getElementById('logo-sidebar').src = LOGO_BASE64;
